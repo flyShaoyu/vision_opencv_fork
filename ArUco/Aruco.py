@@ -3,6 +3,7 @@ import imutils
 from imutils.video import VideoStream
 import time
 import numpy as np
+
 class Aruco:
     """
     ArUco 检测器, 支持图像和视频检测以及快速ArUco码生成
@@ -31,6 +32,7 @@ class Aruco:
         "DICT_APRILTAG_36h10": cv2.aruco.DICT_APRILTAG_36h10,
         "DICT_APRILTAG_36h11": cv2.aruco.DICT_APRILTAG_36h11
     }
+
     def __init__(self):
         self.detector = None
     def __init__(self,aruco_type, if_draw=False):
@@ -42,6 +44,7 @@ class Aruco:
         aruco_params = cv2.aruco.DetectorParameters()
         self.detector = cv2.aruco.ArucoDetector(aruco_dict, aruco_params)
         self.if_draw = if_draw
+
     def _initialize_detector(self, aruco_type):
         """初始化 ArUco 检测器"""
         if aruco_type not in self.ARUCO_DICT:
@@ -62,24 +65,48 @@ class Aruco:
         maker = cv2.aruco.generateImageMarker(aruco_dict, ids, pix)
         cv2.imwrite(path,maker)
 
-    def detect_image(self, path, aruco_type="DICT_5X5_100", if_draw=True):
+
+    def detect_image(self, input_data, aruco_type="DICT_5X5_100", if_draw=True):
         """
-        图像检测方法
-        :param path: 图像路径
-        :param aruco_type: ArUco 字典类型
-        :param if_draw: 是否绘制标记
-        :return: 标注后的图像 或 [{"id": id, "cx": cx, "cy": cy}, ...] 列表
+        :param input_data: 可以是文件路径 (str) 或图像帧 (numpy数组)
         """
         self._initialize_detector(aruco_type)
-        image = cv2.imread(path)
-        if image is None:
-            raise FileNotFoundError(f"Image not found: {path}")
+        
+        # 判断输入是路径还是图像帧
+        if isinstance(input_data, str):
+            image = cv2.imread(input_data)
+            if image is None:
+                raise FileNotFoundError(f"Image not found: {input_data}")
+        elif isinstance(input_data, np.ndarray):
+            image = input_data.copy()
+        else:
+            raise ValueError("input_data 必须是文件路径 (str) 或图像帧 (numpy数组)")
+        
 
         image = imutils.resize(image, width=600)
         corners, ids, _ = self.detector.detectMarkers(image)
 
         results = []
         if ids is not None:
+
+            for i in range(len(ids)):
+                marker_id = int(ids[i][0])
+                corner = corners[i][0]  # 直接获取角点数据 (shape: (4,2))
+                (topLeft, _, _, bottomRight) = corner.reshape((4, 2))
+                cX = int((topLeft[0] + bottomRight[0]) / 2)
+                cY = int((topLeft[1] + bottomRight[1]) / 2)
+                results.append({
+                    "id": marker_id,
+                    "cx": cX,
+                    "cy": cY,
+                    "corners": corner  # 新增角点数据
+                })
+
+                if if_draw:
+                    self._draw_marker(image, corner.reshape((4, 2)), marker_id)
+
+        return image if if_draw else results
+
             # 保留原始 ids 的二维结构 (n, 1)
             for i in range(len(ids)):
                 marker_id = int(ids[i][0])  # 提取原始数值
@@ -115,6 +142,7 @@ class Aruco:
                 if self.if_draw:
                     self._draw_marker(image, corner, marker_id)
         content['results'] = results
+
 
 
     def detect_video( self, 
@@ -162,7 +190,8 @@ class Aruco:
                     (topLeft, _, _, bottomRight) = corner
                     cX = int((topLeft[0] + bottomRight[0]) / 2)
                     cY = int((topLeft[1] + bottomRight[1]) / 2)
-                    results.append({"id": marker_id, "cx": cX, "cy": cY})
+                    results.append({"id": marker_id, "cx": cX, "cy": cY,"corners": corners[i][0]})
+
 
                     if if_draw:
                         self._draw_marker(frame, corner, marker_id)
