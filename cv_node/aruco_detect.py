@@ -8,12 +8,19 @@ import cv2
 import numpy as np
 from cv_lib.cv_bridge import ImagePublish_t,ImageReceive_t
 from PoseSolver.Aruco import Aruco
+from PoseSolver.PoseSolver import PoseSolver
 
 def main():
-    
+    # camera_matix=[600.574780 ,0.000000 ,440.893136,0.000000 ,600.705625 ,235.248930,0.000000 ,0.000000 ,1.000000]
+    camera_martix=np.array([[600.574780, 0.000000, 440.893136],
+                            [0.000000, 600.705625, 235.248930],
+                            [0.000000, 0.000000, 1.000000]],dtype=np.float32)
+    # dist_coeffs=[0.077177 ,-0.119285 ,-0.006264 ,0.005271 ,0.000000]
+    dist_coeffs=np.array([[0.077177, -0.119285, -0.006264, 0.005271, 0.000000]],dtype=np.float32)
     pipe=[]
     pipe.append(ImageReceive_t(print_latency=True))
     pipe.append(Aruco("DICT_5X5_100",if_draw=True))
+    pipe.append(PoseSolver(camera_martix,dist_coeffs,0.1))
     pipe.append(ImagePublish_t("aruco"))
     content={}
     print_time=True

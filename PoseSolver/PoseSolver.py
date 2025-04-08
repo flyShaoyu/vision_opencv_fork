@@ -66,3 +66,22 @@ class PoseSolver:
         cv2.line(image, origin, x_end, (0, 0, 255), 2)  # X轴（红色）
         cv2.line(image, origin, y_end, (0, 255, 0), 2)  # Y轴（绿色）
         cv2.line(image, origin, z_end, (255, 0, 0), 2)  # Z轴（蓝色）
+    def update(self,image:np.ndarray,content:dict):
+        '读取信息'
+        corners=[]
+        if "corners" in content:
+            if len(content["corners"])==0:
+                return
+            #读取第一个框
+            corners=content["corners"][0]["corners"] 
+            # corners.append(content["corners"][0]["cx"],content["corners"][0]["cy"])
+
+        else :
+            return
+        rvec,tvec=self.solve_pose(corners)
+        self.draw_axis(image,rvec,tvec)
+        #创建pnp字典
+        if "pnp" not in content:
+            content["pnp"]={}
+        content["pnp"]["rvec"]=rvec
+        content["pnp"]["tvec"]=tvec
