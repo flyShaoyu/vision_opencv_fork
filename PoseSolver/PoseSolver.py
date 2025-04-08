@@ -69,7 +69,14 @@ class PoseSolver:
         cv2.line(image, origin, y_end, (0, 255, 0), 2)  # Y轴（绿色）
         cv2.line(image, origin, z_end, (255, 0, 0), 2)  # Z轴（蓝色）
     def update(self,image:np.ndarray,content:dict):
-        '读取信息'
+        """_summary_
+
+        Args:
+            image (np.ndarray): _description_
+            content (dict): 需要有corners字段, corners字段中需要有corners
+        brief:
+            会读取corners字段中的第一个框的corners,然后解算位姿
+        """
         corners=[]
         #创建pnp字典
         content["pnp"]={}
