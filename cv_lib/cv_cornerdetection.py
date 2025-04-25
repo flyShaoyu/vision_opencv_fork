@@ -32,28 +32,17 @@ class BRISKCornerDetector:
 
         return keypoints, descriptors
 
-def main():
-    # 初始化检测器
-    detector = BRISKCornerDetector(show_result=True)
-    
-    # 读取测试图像
-    image = cv2.imread("example.jpg")
-    if image is None:
-        print("错误：无法加载图像！")
-        return
-
-    # 执行角点检测
-    start_time = time.time()
-    keypoints, descriptors = detector.detect(image)
-    processing_time = (time.time() - start_time) * 1000
-
-    # 打印结果
-    print(f"检测到 {len(keypoints)} 个角点")
-    print(f"处理时间: {processing_time:.2f} ms")
-
-    # 等待退出
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
-if __name__ == "__main__":
-    main()
+    def update(self, image, content):
+        """
+        管道模式要求的更新方法
+        :param image: 输入图像
+        :param content: 共享数据字典
+        :return: 修改后的图像和内容
+        """
+        keypoints, descriptors = self.detect(image)
+        
+        # 将结果存入content字典，供后续模块使用
+        content["keypoints"] = keypoints
+        content["descriptors"] = descriptors
+        
+        return image, content
