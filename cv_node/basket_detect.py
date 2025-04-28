@@ -6,7 +6,7 @@ print(sys.path)
 import time
 import cv2
 import numpy as np
-from cv_lib.cv_bridge import ImagePublish_t,ImageReceive_t
+from cv_lib.ros.cv_bridge import ImagePublish_t,ImageReceive_t
 from PoseSolver.Aruco import Aruco
 from PoseSolver.PoseSolver import PoseSolver
 #from YOLOv11.yolo_lib import MyYOLO
@@ -23,7 +23,7 @@ def main():
     pipe.append(BRISKCornerDetector(show_result=True))
     #pipe.append(MyYOLO("yolo11n-seg_int8_openvino_model/yolo11n-seg.xml",show=True,use_intel=True))
     # pipe.append(MyYOLO("yolo11n-seg.pt",show=True))
-    pipe.append(ImagePublish_t("yolo"))
+    pipe.append(ImagePublish_t("opencv"))
     content={}
     print_time=True
     while True:
