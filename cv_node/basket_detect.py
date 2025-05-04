@@ -9,7 +9,7 @@ import numpy as np
 from cv_lib.ros.cv_bridge import ImagePublish_t,ImageReceive_t
 from PoseSolver.Aruco import Aruco
 from PoseSolver.PoseSolver import PoseSolver
-#from YOLOv11.yolo_lib import MyYOLO
+from YOLOv11.yolo_lib import MyYOLO
 from cv_lib.cv_cornerdetection import BRISKCornerDetector
 def main():
     # camera_matix=[600.574780 ,0.000000 ,440.893136,0.000000 ,600.705625 ,235.248930,0.000000 ,0.000000 ,1.000000]
@@ -20,9 +20,9 @@ def main():
     dist_coeffs=np.array([[0, 0,0, 0, 0]],dtype=np.float32)
     pipe=[]
     pipe.append(ImageReceive_t(print_latency=True))
-    pipe.append(BRISKCornerDetector(show_result=True))
+    #pipe.append(BRISKCornerDetector(show_result=True))
     #pipe.append(MyYOLO("yolo11n-seg_int8_openvino_model/yolo11n-seg.xml",show=True,use_intel=True))
-    # pipe.append(MyYOLO("yolo11n-seg.pt",show=True))
+    pipe.append(MyYOLO("best.pt",show=True))
     pipe.append(ImagePublish_t("opencv"))
     content={}
     print_time=True
