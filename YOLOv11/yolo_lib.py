@@ -38,35 +38,40 @@ class MyYOLO():
             # 只处理置信度>=0.9的目标
             if conf >= 0.9:
                 for mask in result.masks.xy:
-                    mask = np.array(mask, dtype=np.int32)
+                    mask_points = np.array(mask, dtype=np.int32)
                     
-                    # 计算边界角点
-                    min_x, min_y = np.min(mask, axis=0)
-                    max_x, max_y = np.max(mask, axis=0)
-                    corners = np.array([
-                        [min_x, min_y],  # 左上
-                        [max_x, min_y],  # 右上
-                        [max_x, max_y],  # 右下
-                        [min_x, max_y]   # 左下
-                    ])
+                    # 计算掩膜的凸包来获取四个角点
+                    hull = cv2.convexHull(mask_points)
+                    rect = cv2.minAreaRect(hull)
+                    box = cv2.boxPoints(rect)
+                    box = np.int0(box)
+                    
+                    # 对四个点进行排序：左上、右上、右下、左下
+                    box = sorted(box, key=lambda x: x[0])
+                    left = sorted(box[:2], key=lambda x: x[1])
+                    right = sorted(box[2:], key=lambda x: x[1], reverse=True)
+                    sorted_corners = np.array([left[0], right[0], right[1], left[1]])
                     
                     # 存储角点和置信度
                     content["corners"].append({
-                        "corners": corners,
+                        "corners": sorted_corners,
                         "confidence": conf
                     })
                     
                     # 绘制分割掩码
-                    segmentation_mask = cv2.fillPoly(segmentation_mask, [mask], (0, 255, 0))
+                    segmentation_mask = cv2.fillPoly(segmentation_mask, [mask_points], (0, 255, 0))
         
         # 可视化结果
         if self.show:
             result = results[0]
             image_result = result.plot()
             
-            # 在可视化图像上标记高置信度目标的角点
+            # 在可视化图像上标记掩膜的角点
             for corner_data in content["corners"]:
                 for pt in corner_data["corners"]:
                     cv2.circle(image_result, tuple(pt.astype(int)), 5, (0, 0, 255), -1)
+                # 绘制连接线
+                pts = corner_data["corners"].reshape((-1,1,2))
+                cv2.polylines(image_result, [pts], True, (255,0,0), 2)
             
             image[:] = image_result

@@ -28,47 +28,73 @@ def main():
     pipe.append(MyYOLO("/home/Elaina/yolo/best.pt", show=True))
     pipe.append(ImagePublish_t("yolo"))
     
+    # 添加位姿解算器
+    pose_solver = PoseSolver(camera_matrix, dist_coeffs, marker_length=0.1)  # 假设标记长度为0.1米
+    
     content = {}
     print_time = True
     
-    while True:
-        # 创建一个空的图像对象
-        image = np.zeros((480, 640, 3), dtype=np.uint8)  # 修改为实际图像尺寸
-        
-        # 启动处理管道
-        for p in pipe:
-            if print_time:
-                start_time = time.time()
+    try:
+        while True:
+            # 初始化图像（实际应用中应从相机获取）
+            image = np.zeros((480, 640, 3), dtype=np.uint8)
             
-            p.update(image, content)
-            
-            if print_time:
-                end_time = time.time()
-                print(f"name:{type(p).__name__}: {(end_time - start_time)*1000:.2f} ms")
-        
-        # 处理并显示角点信息
-        if "corners" in content and len(content["corners"]) > 0:
-            print("\n" + "="*50)
-            print(f"检测到 {len(content['corners'])} 个高置信度目标:")
-            
-            for i, corner_data in enumerate(content["corners"]):
-                corners = corner_data["corners"]
-                conf = corner_data["confidence"]
+            # 处理管道
+            for p in pipe:
+                try:
+                    if print_time:
+                        start_time = time.time()
+                    
+                    p.update(image, content)
+                    
+                    if print_time:
+                        end_time = time.time()
+                        print(f"{type(p).__name__}: {(end_time - start_time)*1000:.2f} ms")
                 
-                print(f"\n目标 {i+1} (置信度: {conf:.2f}):")
-                print(f"左上: ({corners[0][0]:.1f}, {corners[0][1]:.1f})")
-                print(f"右上: ({corners[1][0]:.1f}, {corners[1][1]:.1f})") 
-                print(f"右下: ({corners[2][0]:.1f}, {corners[2][1]:.1f})")
-                print(f"左下: ({corners[3][0]:.1f}, {corners[3][1]:.1f})")
+                except Exception as e:
+                    print(f"处理模块 {type(p).__name__} 出错: {str(e)}")
+                    continue
             
-            print("="*50 + "\n")
+            # 如果有检测到目标，进行位姿解算
+            if "corners" in content and len(content["corners"]) > 0:
+                print("\n" + "="*50)
+                print(f"检测到 {len(content['corners'])} 个目标:")
+                
+                for i, corner_data in enumerate(content["corners"]):
+                    corners = corner_data["corners"]
+                    conf = corner_data["confidence"]
+                    
+                    try:
+                        # 位姿解算
+                        rvec, tvec = pose_solver.solve_pose(corners)
+                        pose_solver.draw_axis(image, rvec, tvec)
+                        
+                        # 打印结果
+                        print(f"\n目标 {i+1} (置信度: {conf:.2f}):")
+                        print(f"角点坐标:")
+                        for j, pt in enumerate(corners):
+                            print(f"  点{j+1}: ({pt[0]:.1f}, {pt[1]:.1f})")
+                        print(f"位置向量: [{tvec[0][0]:.3f}, {tvec[1][0]:.3f}, {tvec[2][0]:.3f}]")
+                    
+                    except Exception as e:
+                        print(f"目标 {i+1} 位姿解算失败: {str(e)}")
+                        continue
+                
+                print("="*50 + "\n")
+                
+                # 清空当前帧数据
+                content["corners"] = []
             
-            # 清空当前帧的角点数据，避免重复处理
-            content["corners"] = []
-        
-        # 添加适当的延迟或退出条件
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+            # 显示结果
+            cv2.imshow("Detection Result", image)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+    
+    except KeyboardInterrupt:
+        print("\n程序被用户中断")
+    finally:
+        cv2.destroyAllWindows()
+        print("程序结束")
 
 if __name__ == "__main__":
     main()
