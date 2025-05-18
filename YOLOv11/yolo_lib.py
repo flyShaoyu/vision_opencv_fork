@@ -53,8 +53,11 @@ class MyYOLO():
                         # 使用优化的角点检测方法
                         final_corners = self._optimized_corner_detection(processed_points, image.shape[:2])
 
+                        # 确保角点顺序为左上、右上、右下、左下
+                        ordered_corners = self._order_corners(final_corners)
+
                         content["corners"].append({
-                            "corners": final_corners,
+                            "corners": ordered_corners,
                             "confidence": conf,
                             "raw_points": processed_points
                         })
@@ -127,7 +130,7 @@ class MyYOLO():
                 
                 # 确保有4个角点
                 if len(corners) == 4:
-                    return self._sort_corners(corners)
+                    return corners
         
         # 5. 作为后备，使用方向投影法
         contour_points = largest_contour.reshape(-1, 2)
@@ -142,26 +145,40 @@ class MyYOLO():
             idx = np.argmax(projections)
             extreme_points.append(contour_points[idx])
         
-        return self._sort_corners(np.array(extreme_points, dtype=np.float32))
+        return np.array(extreme_points, dtype=np.float32)
 
-    def _sort_corners(self, corners):
-        """将四个点按左上、右上、右下、左下排序"""
-        # 计算中心点
+    def _order_corners(self, corners):
+        """
+        确保角点顺序为左上、右上、右下、左下
+        """
+        if len(corners) != 4:
+            return corners
+            
+        # 计算质心
         center = np.mean(corners, axis=0)
         
-        # 计算每个点与中心点的夹角
-        angles = []
-        for pt in corners:
-            dx = pt[0] - center[0]
-            dy = pt[1] - center[1]
-            angle = np.arctan2(dy, dx)
-            angles.append(angle)
+        # 计算每个点的x+y和x-y值
+        sums = [pt[0] + pt[1] for pt in corners]
+        diffs = [pt[0] - pt[1] for pt in corners]
         
-        # 根据夹角排序角点
-        sorted_indices = np.argsort(angles)
-        sorted_corners = corners[sorted_indices]
+        # 左上角: x+y最小
+        top_left_idx = np.argmin(sums)
+        top_left = corners[top_left_idx]
         
-        return sorted_corners
+        # 右下角: x+y最大
+        bottom_right_idx = np.argmax(sums)
+        bottom_right = corners[bottom_right_idx]
+        
+        # 右上角: x-y最大
+        top_right_idx = np.argmax(diffs)
+        top_right = corners[top_right_idx]
+        
+        # 左下角: x-y最小
+        bottom_left_idx = np.argmin(diffs)
+        bottom_left = corners[bottom_left_idx]
+        
+        # 返回有序角点
+        return np.array([top_left, top_right, bottom_right, bottom_left], dtype=np.float32)
 
     def _visualize_results(self, result, image, content):
         """可视化检测结果"""
