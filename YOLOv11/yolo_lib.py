@@ -9,6 +9,7 @@ class MyYOLO():
         self.model = YOLO(model_path)
         self.show = show
         if use_intel:
+            # OpenVINO 加速部分（若无需加速可忽略）
             import openvino.runtime as ov
             from openvino.runtime import Core
             import openvino.properties.hint as hints
@@ -25,114 +26,158 @@ class MyYOLO():
             self.model.predictor.model.ov_compiled_model = quantized_seg_compiled_model
 
     def update(self, image: np.ndarray, content: dict, confidence_threshold=0.8, epsilon=0.05):
+        """
+        处理图像并更新 content 字典，输出兼容 PoseSolver 的角点格式
+        :param image: 输入图像（BGR格式）
+        :param content: 存储结果的字典，包含 "corners" 字段
+        :param confidence_threshold: 置信度阈值
+        :param epsilon: 多边形拟合参数
+        """
         results = self.model(image)
+        content.clear()  # 清空旧数据
         content["contours"] = []
-        content["approx_polygons"] = []  # 存储多边形拟合结果
+        content["approx_polygons"] = []
+        content["corner_points"] = []  # 原始角点（调试用）
+        content["corners"] = []         # 兼容 PoseSolver 的角点列表
 
-        # 存储所有符合阈值条件的候选掩膜
-        valid_masks = []
-
-        for result in results:
-            if result.masks is None:
-                continue
-
-            # 获取当前结果中的所有检测框置信度
-            confidences = result.boxes.conf.cpu().numpy() if hasattr(result.boxes, 'conf') else np.array([0.0])
-
-            # 处理每个掩膜
-            for i in range(min(len(result.masks.xy), len(confidences))):
-                try:
-                    mask = result.masks.xy[i]
-                    conf = float(confidences[i])
-                    
-                    # 跳过置信度低于阈值的掩膜
-                    if conf < confidence_threshold:
-                        continue
-                    
-                    mask_points = np.array(mask, dtype=np.float32).reshape(-1, 2)
-                    if len(mask_points) < 4:
-                        continue
-
-                    valid_masks.append({
-                        "mask": mask_points,
-                        "confidence": conf,
-                    })
-                except Exception as e:
-                    print(f"掩膜筛选出错: {str(e)}")
-                    continue
+        # 筛选有效掩膜
+        valid_masks = self._filter_valid_masks(results, confidence_threshold)
 
         # 处理每个有效掩膜
         for mask_info in valid_masks:
             processed_points = self._postprocess_mask(mask_info["mask"], image.shape[:2])
             contour = processed_points.astype(np.int32).reshape(-1, 1, 2)
+            approx_polygon = self._fit_polygon(contour, epsilon)
             
-            # 多边形拟合
-            perimeter = cv2.arcLength(contour, True)
-            approx_polygon = cv2.approxPolyDP(contour, epsilon * perimeter, True)
+            # 保存中间结果（调试用）
+            self._save_intermediate_results(content, mask_info, contour, approx_polygon)
             
-            content["contours"].append({
-                "contour": contour,
-                "confidence": mask_info["confidence"],
-            })
+            # 提取并筛选角点
+            corner_points = self._extract_corner_points(approx_polygon, mask_info["confidence"])
+            if corner_points is None:
+                continue  # 跳过顶点数不足的情况
             
-            content["approx_polygons"].append({
-                "polygon": approx_polygon,
-                "confidence": mask_info["confidence"],
-                "vertex_count": len(approx_polygon),  # 多边形顶点数
-            })
-            
-            print(f"检测到掩膜 - 置信度: {mask_info['confidence']:.4f}, 拟合多边形顶点数: {len(approx_polygon)}")
+            # 保存兼容 PoseSolver 的角点数据
+            self._save_pose_solver_corners(content, corner_points, mask_info["confidence"])
 
         # 可视化结果
-        if self.show and len(content["approx_polygons"]) > 0:
+        if self.show and content["corners"]:
             self._visualize_results(content["approx_polygons"], image, confidence_threshold)
 
+    def _filter_valid_masks(self, results, confidence_threshold):
+        """筛选出符合置信度阈值的掩膜"""
+        valid_masks = []
+        for result in results:
+            if result.masks is None:
+                continue
+            confidences = result.boxes.conf.cpu().numpy() if hasattr(result.boxes, 'conf') else np.array([0.0])
+            for i in range(min(len(result.masks.xy), len(confidences))):
+                try:
+                    mask = result.masks.xy[i]
+                    conf = float(confidences[i])
+                    if conf < confidence_threshold:
+                        continue
+                    mask_points = np.array(mask, dtype=np.float32).reshape(-1, 2)
+                    if len(mask_points) < 4:
+                        continue
+                    valid_masks.append({"mask": mask_points, "confidence": conf})
+                except Exception as e:
+                    print(f"掩膜筛选错误: {str(e)}")
+        return valid_masks
+
     def _postprocess_mask(self, mask_points, image_shape):
-        """对预测掩膜进行后处理，提升质量"""
-        # 创建掩膜
+        """对掩膜进行后处理（平滑、形态学操作）"""
         mask_img = np.zeros(image_shape[:2], dtype=np.uint8)
         cv2.fillPoly(mask_img, [mask_points.astype(np.int32)], 255)
-        
-        # 平滑处理
         mask_img = cv2.GaussianBlur(mask_img, (5, 5), 0)
-        
-        # 形态学操作
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         mask_img = cv2.morphologyEx(mask_img, cv2.MORPH_OPEN, kernel, iterations=1)
         mask_img = cv2.morphologyEx(mask_img, cv2.MORPH_CLOSE, kernel, iterations=1)
-        
-        # 查找轮廓并返回
         contours, _ = cv2.findContours(mask_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         return max(contours, key=cv2.contourArea).reshape(-1, 2).astype(np.float32) if contours else mask_points
 
-    def _visualize_results(self, polygons_data, image, confidence_threshold=0.8):
-        """可视化多边形拟合结果"""
-        try:
-            image_result = np.zeros_like(image)
-            
-            for polygon_info in polygons_data:
-                confidence = polygon_info["confidence"]
-                if confidence >= confidence_threshold:
-                    polygon = polygon_info["polygon"]
-                    vertex_count = polygon_info["vertex_count"]
-                    
-                    # 绘制填充区域
-                    cv2.fillPoly(image_result, [polygon], (0, 255, 0, 50))
-                    
-                    # 绘制多边形轮廓（蓝色）
-                    cv2.polylines(image_result, [polygon], True, (0, 0, 255), 2)
-                    
-                    # 标记多边形顶点（红色圆点）
-                    for point in polygon:
-                        cv2.circle(image_result, tuple(point[0]), 5, (255, 0, 0), -1)
-                    
-                    # 添加置信度和顶点数文本
-                    cv2.putText(image_result, f"Conf: {confidence:.2f}, Vertices: {vertex_count}",
-                               (polygon[0][0][0], polygon[0][0][1] - 10),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            
-            # 合并到原图
-            image[:] = cv2.addWeighted(image, 1, image_result, 0.7, 0)
+    def _fit_polygon(self, contour, epsilon):
+        """多边形拟合"""
+        perimeter = cv2.arcLength(contour, True)
+        return cv2.approxPolyDP(contour, epsilon * perimeter, True).reshape(-1, 2)
+
+    def _extract_corner_points(self, approx_polygon, confidence):
+        """从多边形中提取4个角点（处理4或5个顶点的情况）"""
+        vertex_count = len(approx_polygon)
+        if vertex_count not in [4, 5]:
+            return None  # 只处理4或5个顶点的情况
         
+        corner_points = approx_polygon.tolist()
+        if vertex_count == 5:
+            try:
+                selected_points = self._select_four_corners(corner_points)
+            except Exception as e:
+                print(f"角点筛选错误: {str(e)}")
+                return None
+        else:
+            selected_points = corner_points
+        
+        # 转换为 (4,2) 的 numpy 数组，并确保顺序正确
+        try:
+            ordered_points = self._order_corners(selected_points)
+            return np.array(ordered_points, dtype=np.float32).reshape(-1, 2)
         except Exception as e:
-            print(f"可视化出错: {str(e)}")
+            print(f"角点排序错误: {str(e)}")
+            return None
+
+    def _select_four_corners(self, points):
+        """从5个点中筛选出4个角点（基于角度差最大间隔法）"""
+        center = np.mean(points, axis=0)
+        angles = [(np.arctan2(p[1]-center[1], p[0]-center[0]), p) for p in points]
+        angles.sort(key=lambda x: x[0])
+        angle_diffs = [( (angles[(i+1)%5][0] - angles[i][0]) % (2*np.pi), i) for i in range(5)]
+        max_diff_idx = max(angle_diffs, key=lambda x: x[0])[1]
+        remaining_indices = [(max_diff_idx + i) % 5 for i in range(1, 5)]
+        return [angles[i][1] for i in remaining_indices]
+
+    def _order_corners(self, points):
+        """将4个角点排序为左上、右上、右下、左下"""
+        points = np.array(points)
+        sum_xy = points[:, 0] + points[:, 1]
+        diff_xy = points[:, 0] - points[:, 1]
+        top_left = points[np.argmin(sum_xy)]
+        top_right = points[np.argmax(diff_xy)]
+        bottom_right = points[np.argmax(sum_xy)]
+        bottom_left = points[np.argmin(diff_xy)]
+        return [top_left, top_right, bottom_right, bottom_left]
+
+    def _save_intermediate_results(self, content, mask_info, contour, approx_polygon):
+        """保存中间结果（用于调试和可视化）"""
+        content["contours"].append({
+            "contour": contour,
+            "confidence": mask_info["confidence"]
+        })
+        content["approx_polygons"].append({
+            "polygon": approx_polygon.reshape(-1, 1, 2),  # 保留原始格式用于可视化
+            "confidence": mask_info["confidence"],
+            "vertex_count": len(approx_polygon)
+        })
+
+    def _save_pose_solver_corners(self, content, corners_pts, confidence):
+        """保存兼容 PoseSolver 的角点格式"""
+        content["corners"].append({
+            "corners": corners_pts,  # 形状 (4,2) 的 numpy 数组
+            "confidence": confidence,
+            "class_id": 0,  # 类别ID（可根据模型输出调整）
+            "label": "object"  # 目标标签（可根据模型输出调整）
+        })
+
+    def _visualize_results(self, polygons_data, image, confidence_threshold):
+        """可视化多边形拟合结果"""
+        image_result = np.zeros_like(image)
+        for poly_info in polygons_data:
+            if poly_info["confidence"] < confidence_threshold:
+                continue
+            polygon = poly_info["polygon"]
+            cv2.polylines(image_result, [polygon], True, (0, 0, 255), 2)
+            for point in polygon:
+                cv2.circle(image_result, tuple(point[0]), 3, (255, 0, 0), -1)
+            cv2.putText(image_result, f"Conf: {poly_info['confidence']:.2f}, Vertices: {poly_info['vertex_count']}",
+                       (polygon[0][0][0], polygon[0][0][1] - 10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        image[:] = cv2.addWeighted(image, 1, image_result, 0.5, 0)
