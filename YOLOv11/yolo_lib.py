@@ -27,20 +27,16 @@ class MyYOLO:
                 self.model.predictor.setup_model(model=self.model.model)
             self.model.predictor.model.ov_compiled_model = quantized_seg_compiled_model
 
-    def update(self, image: np.ndarray, content: dict, confidence_threshold=0.8, epsilon=0.05):
+    def update(self, image: np.ndarray, confidence_threshold=0.8, epsilon=0.05):
         """
-        处理图像并更新 content 字典，输出兼容 PoseSolver 的角点格式
+        处理图像并输出兼容 PoseSolver 的角点格式
         :param image: 输入图像(BGR格式)
-        :param content: 存储结果的字典，包含 "corners" 字段
         :param confidence_threshold: 置信度阈值
         :param epsilon: 多边形拟合参数
+        :return: 角点列表,每个元素的形状巍(4,2)的numpy的数组
         """
         results = self.model(image)
-        content.clear()  # 清空旧数据
-        content["contours"] = []
-        content["approx_polygons"] = []
-        content["corner_points"] = []  # 原始角点（调试用）
-        content["corners"] = []         # 兼容 PoseSolver 的角点列表
+        corners = []
 
         # 筛选有效掩膜
         valid_masks = self._filter_valid_masks(results, confidence_threshold)
@@ -52,20 +48,16 @@ class MyYOLO:
             contour = processed_points.astype(np.int32).reshape(-1, 1, 2)
             approx_polygon = self.mask_processor.fit_polygon(contour, epsilon)
             
-            # 保存中间结果（调试用）
-            self._save_intermediate_results(content, mask_info, contour, approx_polygon)
-            
             # 提取并筛选角点
             corner_points = self.mask_processor.extract_corner_points(approx_polygon, mask_info["confidence"])
-            if corner_points is None:
-                continue  # 跳过顶点数不足的情况
-            
-            # 保存兼容 PoseSolver 的角点数据
-            self._save_pose_solver_corners(content, corner_points, mask_info["confidence"])
+            if corner_points is not None and len(corner_points) == 4:
+                corners.append(corner_points)
 
         # 可视化结果
-        if self.show and content["corners"]:
-            self._visualize_results(content["approx_polygons"], image, confidence_threshold)
+        if self.show and corners:
+            self._visualize_results(corners, image, confidence_threshold)
+
+        return corners if corners else None
 
     def _filter_valid_masks(self, results, confidence_threshold):
         """筛选出符合置信度阈值的掩膜"""
@@ -88,38 +80,17 @@ class MyYOLO:
                     print(f"掩膜筛选错误: {str(e)}")
         return valid_masks
 
-    def _save_intermediate_results(self, content, mask_info, contour, approx_polygon):
-        """保存中间结果（用于调试和可视化）"""
-        content["contours"].append({
-            "contour": contour,
-            "confidence": mask_info["confidence"]
-        })
-        content["approx_polygons"].append({
-            "polygon": approx_polygon.reshape(-1, 1, 2),  # 保留原始格式用于可视化
-            "confidence": mask_info["confidence"],
-            "vertex_count": len(approx_polygon)
-        })
-
-    def _save_pose_solver_corners(self, content, corners_pts, confidence):
-        """保存兼容 PoseSolver 的角点格式"""
-        content["corners"].append({
-            "corners": corners_pts,  # 形状 (4,2) 的 numpy 数组
-            "confidence": confidence,
-            "class_id": 0,  # 类别ID（可根据模型输出调整）
-            "label": "object"  # 目标标签（可根据模型输出调整）
-        })
-
-    def _visualize_results(self, polygons_data, image, confidence_threshold):
+    def _visualize_results(self, corners, image, confidence_threshold):
         """可视化多边形拟合结果"""
         image_result = np.zeros_like(image)
-        for poly_info in polygons_data:
-            if poly_info["confidence"] < confidence_threshold:
-                continue
-            polygon = poly_info["polygon"]
+        for corner_points in corners:
+            polygon = corner_points.astype(np.int32).reshape(-1, 1, 2)
             cv2.polylines(image_result, [polygon], True, (0, 0, 255), 2)
             for point in polygon:
                 cv2.circle(image_result, tuple(point[0]), 3, (255, 0, 0), -1)
-            cv2.putText(image_result, f"Conf: {poly_info['confidence']:.2f}, Vertices: {poly_info['vertex_count']}",
-                       (polygon[0][0][0], polygon[0][0][1] - 10),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+            # 这里假设置信度为 1.0，可根据实际情况修改
+            conf = 1.0
+            cv2.putText(image_result, f"Conf: {conf:.2f}, Vertices: {len(corner_points)}",
+                        (polygon[0][0][0], polygon[0][0][1] - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         image[:] = cv2.addWeighted(image, 1, image_result, 0.5, 0)

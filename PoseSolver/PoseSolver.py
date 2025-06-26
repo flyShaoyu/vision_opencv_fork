@@ -68,48 +68,45 @@ class PoseSolver:
         cv2.line(image, origin, x_end, (0, 0, 255), 2)  # X轴（红色）
         cv2.line(image, origin, y_end, (0, 255, 0), 2)  # Y轴（绿色）
         cv2.line(image, origin, z_end, (255, 0, 0), 2)  # Z轴（蓝色）
-    def update(self,image:np.ndarray,content:dict):
-        """_summary_
 
-        Args:
-            image (np.ndarray): _description_
-            content (dict): 需要有corners字段, corners字段中需要有corners
-        brief:
-            会读取corners字段中的第一个框的corners,然后解算位姿
+    def update(self, image: np.ndarray, corners_list):
         """
-        corners=[]
-        #创建pnp字典
-        content["pnp"]={}
-        if "corners" in content:
-            if len(content["corners"])==0:
-                return
-            #读取第一个框
-            corners=content["corners"][0]["corners"] 
-            # corners.append(content["corners"][0]["cx"],content["corners"][0]["cy"])
+        Args:
+            image (np.ndarray): 输入图像
+            corners_list: 角点列表，每个元素是形状为(4, 2)的numpy数组
+        """
+        for i, corners in enumerate(corners_list):
+            try:
+                rvec, tvec = self.solve_pose(corners)
+                self.draw_axis(image, rvec, tvec)
 
-        else :
-            return
-        rvec,tvec=self.solve_pose(corners)
-        self.draw_axis(image,rvec,tvec)
-        content["pnp"]["rvec"]=rvec
-        content["pnp"]["tvec"]=tvec
-        
-        # 计算并存储欧拉角
-        rotation_matrix, _ = cv2.Rodrigues(rvec)
-        sy = np.sqrt(rotation_matrix[0,0] ** 2 + rotation_matrix[1,0] ** 2)
-        
-        # 计算欧拉角
-        pitch = np.arctan2(rotation_matrix[2,1], rotation_matrix[2,2])  # X轴旋转角
-        yaw = np.arctan2(-rotation_matrix[2,0], sy)                     # Y轴旋转角
-        roll = np.arctan2(rotation_matrix[1,0], rotation_matrix[0,0])   # Z轴旋转角
-        
-        # 将角度从弧度转换为度
-        content["pnp"]["pitch"] = np.degrees(pitch)
-        content["pnp"]["yaw"] = np.degrees(yaw)
-        content["pnp"]["roll"] = np.degrees(roll)
-        
-        # 计算并存储距离
-        content["pnp"]["distance"] = np.linalg.norm(tvec)
-        
-        if self.print_result:
-            print(f"Pitch: {np.degrees(pitch):.1f}°, Yaw: {np.degrees(yaw):.1f}°, Roll: {np.degrees(roll):.1f}°, 距离: {np.linalg.norm(tvec):.3f}m")    
+                # 创建pnp结果字典
+                pnp_result = {}
+                pnp_result["rvec"] = rvec
+                pnp_result["tvec"] = tvec
+
+                # 计算并存储欧拉角
+                rotation_matrix, _ = cv2.Rodrigues(rvec)
+                sy = np.sqrt(rotation_matrix[0,0] ** 2 + rotation_matrix[1,0] ** 2)
+                
+                # 计算欧拉角
+                pitch = np.arctan2(rotation_matrix[2,1], rotation_matrix[2,2])  # X轴旋转角
+                yaw = np.arctan2(-rotation_matrix[2,0], sy)                     # Y轴旋转角
+                roll = np.arctan2(rotation_matrix[1,0], rotation_matrix[0,0])   # Z轴旋转角
+                
+                # 将角度从弧度转换为度
+                pnp_result["pitch"] = np.degrees(pitch)
+                pnp_result["yaw"] = np.degrees(yaw)
+                pnp_result["roll"] = np.degrees(roll)
+                
+                # 计算并存储距离
+                pnp_result["distance"] = np.linalg.norm(tvec)
+
+                if self.print_result:
+                    print(f"目标 {i + 1}:")
+                    print(f"  Pitch: {pnp_result['pitch']:.1f}°, Yaw: {pnp_result['yaw']:.1f}°, Roll: {pnp_result['roll']:.1f}°, 距离: {pnp_result['distance']:.3f}m")
+
+            except AssertionError as e:
+                print(f"目标 {i + 1} 角点格式错误: {e}")
+            except ValueError as e:
+                print(f"目标 {i + 1} PnP解算失败: {e}")

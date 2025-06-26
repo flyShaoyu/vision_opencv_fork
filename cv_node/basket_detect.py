@@ -70,17 +70,16 @@ class ImageProcessingNode(Node):
             self.get_logger().error(f"堆栈跟踪: {traceback.format_exc()}")
 
     def process_image(self):
-        """处理图像的通用方法"""
-        content = {}
+        
         # YOLO检测
-        self.yolo_detector.update(self.image, content)
+        corners = self.yolo_detector.update(self.image)
 
         # 发布处理后的图像
         self.image_publisher.update(self.image)
 
         # 位姿解算 (如果有检测结果)
-        if 'corners' in content and len(content['corners']) > 0:
-            self.pose_solver.update(self.image, content)
+        if corners is not None and len(corners) > 0:
+            self.pose_solver.update(self.image, corners)
 
             if hasattr(self.pose_solver, 'pnp_result'):
                 pose_info = self.pose_solver.pnp_result
