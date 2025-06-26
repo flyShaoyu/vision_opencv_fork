@@ -4,7 +4,8 @@ services:
     # build:
     #   context: ..
     #   dockerfile: .devcontainer/Dockerfile
-    image: elaina/yolo_image
+    # image: elaina/yolo_image
+    image: elainasuki/rc2025:yolo-ros
     container_name: yolo_container
     environment:
       - DISPLAY=${DISPLAY}

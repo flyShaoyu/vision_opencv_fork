@@ -28,3 +28,7 @@ which python
 ```bash
 sudo apt-get install nautilus
 ```
+2.遇到无法找到模块解析路径问题
+```bash
+export PYTHONPATH="/home/Elaina/yolo:$PYTHONPATH"
+```

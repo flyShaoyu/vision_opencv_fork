@@ -30,7 +30,7 @@ class MyYOLO:
     def update(self, image: np.ndarray, content: dict, confidence_threshold=0.8, epsilon=0.05):
         """
         处理图像并更新 content 字典，输出兼容 PoseSolver 的角点格式
-        :param image: 输入图像（BGR格式）
+        :param image: 输入图像(BGR格式)
         :param content: 存储结果的字典，包含 "corners" 字段
         :param confidence_threshold: 置信度阈值
         :param epsilon: 多边形拟合参数
