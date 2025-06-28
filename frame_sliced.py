@@ -21,7 +21,7 @@ class ImageSubscriber(Node):
         self.save_dir = "saved_images"
         os.makedirs(self.save_dir, exist_ok=True)
         self.frame_count = 0
-        self.save_interval = 5  # 每5帧保存一次（可根据需要调整）
+        self.save_interval = 30  # 每5帧保存一次（可根据需要调整）
         
         self.get_logger().info("图像订阅节点已启动，准备接收图像...")
 
