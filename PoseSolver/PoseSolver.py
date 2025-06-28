@@ -102,6 +102,9 @@ class PoseSolver:
                 # 计算并存储距离
                 pnp_result["distance"] = np.linalg.norm(tvec)
 
+                # 将结果存储到类的属性中
+                self.pnp_result = pnp_result
+
                 if self.print_result:
                     print(f"目标 {i + 1}:")
                     print(f"  Pitch: {pnp_result['pitch']:.1f}°, Yaw: {pnp_result['yaw']:.1f}°, Roll: {pnp_result['roll']:.1f}°, 距离: {pnp_result['distance']:.3f}m")
