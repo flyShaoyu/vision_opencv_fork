@@ -20,3 +20,4 @@ RUN pip install roslibpy pyzmq
 USER root
 RUN echo "export PYTHONPATH=~/yolo:$PYTHONPATH" >> ~/.bashrc \
     && echo "export ROS_LOCALHOST_ONLY=1" >> /home/$USERNAME/.bashrc 
+    && echo "export PYTHONPATH=/home/Elaina/yolo:$PYTHONPATH" >> /home/$USERNAME/.bashrc
