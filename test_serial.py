@@ -1,4 +1,4 @@
-import serial
+from test_serial import serial
 
 # === 手动设置参数 ===
 PORT = 'COM7'       # 修改为你的串口号(如COM3)

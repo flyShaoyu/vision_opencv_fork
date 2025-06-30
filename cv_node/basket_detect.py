@@ -28,7 +28,7 @@ class ImageProcessingNode(Node):
         self.dist_coeffs = np.array([[0, 0, 0, 0, 0]], dtype=np.float32)
         
         # 初始化各组件
-        self.yolo_detector = MyYOLO("/home/Elaina/yolo/weights/nanjing.pt", show=True)
+        self.yolo_detector = MyYOLO("/home/Elaina/yolo/weights/basket/nanjing.pt", show=True)
         self.image_publisher = ImagePublish_t("yolo/image")
         self.pose_solver = PoseSolver(
             self.camera_matrix,
@@ -39,7 +39,7 @@ class ImageProcessingNode(Node):
         
         # 创建发布者
         self.yaw_publisher = self.create_publisher(Float32, 'basket_yaw', 10)
-        self.json_publisher = self.create_publisher(String, 'yaw_json', 10)  # 新增JSON发布者
+        self.json_publisher = self.create_publisher(String, 'basket_yaw_json', 10)  # 新增JSON发布者
         
         # 图像缓冲区
         self.image = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -50,11 +50,19 @@ class ImageProcessingNode(Node):
         
         self.get_logger().info("ImageProcessingNode 初始化完成")
 
+    def color_darken(self, image):
+        """颜色加深处理"""
+        alpha = 0.9  # 对比度调整因子
+        beta = -15   # 亮度调整因子
+        return cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
+
     def compressed_image_callback(self, msg: CompressedImage):
         """处理压缩图像消息的回调函数"""
         self.get_logger().info("接收到压缩图像消息")
         try:
             self.image = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
+            # 颜色加深处理
+            self.image = self.color_darken(self.image)
             self.process_image()
         except Exception as e:
             self.get_logger().error(f"处理压缩图像时出错: {str(e)}")
@@ -66,6 +74,8 @@ class ImageProcessingNode(Node):
         self.get_logger().info("接收到非压缩图像消息")
         try:
             self.image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+            # 颜色加深处理
+            self.image = self.color_darken(self.image)
             self.process_image()
         except Exception as e:
             self.get_logger().error(f"处理非压缩图像时出错: {str(e)}")

@@ -33,7 +33,7 @@ class Aruco:
         "DICT_APRILTAG_36h11": cv2.aruco.DICT_APRILTAG_36h11
     }
     
-    def __init__(self,aruco_type="DICT_5X5_100", if_draw=False):
+    def __init__(self,aruco_type="DICT_5X5_1000", if_draw=False):
         # self.detector = None
         """初始化 ArUco 检测器"""
         if aruco_type not in self.ARUCO_DICT:
@@ -64,7 +64,7 @@ class Aruco:
         cv2.imwrite(path,maker)
 
 
-    def detect_image(self, input_data, aruco_type="DICT_5X5_100", if_draw=True):
+    def detect_image(self, input_data, aruco_type="DICT_5X5_1000", if_draw=True):
         """
         :param input_data: 可以是文件路径 (str) 或图像帧 (numpy数组)
         """
@@ -126,8 +126,6 @@ class Aruco:
                 if self.if_draw:
                     self._draw_marker(image, corner, marker_id)
         content['corners'] = results
-
-
 
     def detect_video( self, 
                       use_camera=True, 
