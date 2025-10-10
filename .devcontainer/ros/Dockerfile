@@ -2,7 +2,7 @@
 FROM elainasuki/ros:ros2-humble-full-0614
 
 ARG USERNAME=Elaina
-
+ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 
 ARG GROUP_NAME=wheel
