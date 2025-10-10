@@ -66,7 +66,7 @@ RUN curl -L https://github.com/oh-my-fish/oh-my-fish/raw/master/bin/install | su
     sudo rm install_omf 
 
 # 复制fish配置
-COPY .devcontainer/packages/fish /home/${USERNAME}/.config/fish
+COPY packages/fish /home/${USERNAME}/.config/fish
 
 # 处理OpenCV和其他依赖
 USER root
