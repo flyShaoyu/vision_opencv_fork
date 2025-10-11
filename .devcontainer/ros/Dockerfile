@@ -2,7 +2,7 @@
 FROM elainasuki/ros:ros2-humble-full-0614
 
 ARG USERNAME=Elaina
-ARG USER_UID=1000
+
 ARG USER_GID=$USER_UID
 
 ARG GROUP_NAME=wheel
@@ -34,6 +34,6 @@ USER root
 RUN echo "export PYTHONPATH=~/yolo:$PYTHONPATH" >> ~/.bashrc \
     && echo "export ROS_LOCALHOST_ONLY=1" >> /home/$USERNAME/.bashrc \
     && echo "export PYTHONPATH=/home/Elaina/yolo:$PYTHONPATH" >> /home/$USERNAME/.bashrc \
-    && echo "source /opt/ros/humble/setup.bash" >> /home/${USERNAME}/.bashrc
-
-
+    && echo "source /opt/ros/humble/setup.bash" >> /home/${USERNAME}/.bashrc \
+    && echo "export PATH=\$HOME/.local/bin:\$PATH" >> /home/$USERNAME/.bashrc \
+    && echo "set -gx PATH \$HOME/.local/bin \$PATH" >> /home/$USERNAME/.config/fish/config.fish
