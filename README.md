@@ -32,3 +32,8 @@ sudo apt-get install nautilus
 ```bash
 export PYTHONPATH="/home/Elaina/yolo:$PYTHONPATH"
 ```
+
+
+## 层次
+yolo一个文件夹，opencv处理一个，标定一个，pnp解算一个
+
