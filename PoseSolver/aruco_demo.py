@@ -1,4 +1,4 @@
-from Aruco import Aruco
+from PoseSolver.aruco_lib import Aruco
 from PoseSolver import PoseSolver
 from imutils.video import VideoStream
 import cv2
