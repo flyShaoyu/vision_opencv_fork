@@ -29,6 +29,8 @@ RUN pip install imutils ultralytics openvino
 RUN pip install zmq "numpy<2.0"
 # 安装ROS通信库
 RUN pip install roslibpy pyzmq
+# 安装实验跟踪库
+RUN pip install comet_ml
 
 USER root
 RUN echo "export PYTHONPATH=~/yolo:$PYTHONPATH" >> ~/.bashrc \

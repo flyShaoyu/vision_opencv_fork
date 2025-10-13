@@ -4,7 +4,7 @@ import sys
 
 # 配置参数（图像路径和ArUco类型）
 args = {
-    "image": "/home/Elaina/yolo/PoseSolver/aruco_image/test_5x5_100.png",  # 输入图像路径
+    "image": "/home/Elaina/yolo/cv_lib/aruco_image/test_5x5_100.png",  # 输入图像路径
     "type": "DICT_5X5_100"  # ArUco标记类型
 }
 

@@ -6,9 +6,9 @@ from ultralytics import YOLO
 if __name__ == '__main__':
     # 初始化 Comet 实验
     experiment = Experiment(
-        api_key="8xk8gip09dycRGJVl8tNbgozY",
-        project_name="yolov11-test",
-        workspace="summerwen-lab"
+        api_key="JOoztjsikS7g0ZTsEvLIWdgTS",
+        project_name="rc2026-yolo",
+        workspace="yc-dlan"
     )
 
     # 记录超参数
@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
     # 开始训练
     results = model.train(
-        data="YOLOv11/demo_train.yaml",
+        data="yaml/demo_train.yaml",
         epochs=hyper_params["epochs"],
         imgsz=hyper_params["imgsz"],
         batch=hyper_params["batch"],
