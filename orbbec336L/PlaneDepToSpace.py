@@ -15,6 +15,24 @@ def pix_to_cam(u, v, depth, model):
     Z = ray[2] * muit * depth # Z = depth
     return X, Y, Z
 
+def pixel_range_to_space(range, img, info = None):
+    bridge = CvBridge()
+    model = PinholeCameraModel()
+    if info is None:
+        model.fromCameraInfo(load_camera_info('orbbec336L/depth_camera_info.yaml'))
+    else:
+        model.fromCameraInfo(info)
+    depth_img = bridge.imgmsg_to_cv2(img, desired_encoding='passthrough').astype(np.float32) / 1000.0  # Convert mm to meters
+    depth_data = np.zeros((range[2]-range[0], range[3]-range[1], 3), dtype=np.float32)
+    for v in range(range[0], range[2]):
+        for u in range(range[1], range[3]):
+            depth = depth_img[v, u]
+            X, Y, Z = pix_to_cam(u, v, depth, model)
+            depth_data[v - range[0], u - range[1], 0] = X
+            depth_data[v - range[0], u - range[1], 1] = Y
+            depth_data[v - range[0], u - range[1], 2] = Z
+    return depth_data
+
 def load_camera_info(yaml_path: str) -> CameraInfo:
     with open(yaml_path, 'r') as f:
         data = yaml.safe_load(f)
@@ -44,26 +62,18 @@ def load_camera_info(yaml_path: str) -> CameraInfo:
 class PixelToCamera(Node):
     def __init__(self):
         super().__init__('pixel_to_camera')
-        self.cameraInfoInit = False
         self.bridge = CvBridge()
         self.model = PinholeCameraModel()
-        #self.timelist = [0] * 10
-        #self.timeListHead = 0
-        #self.create_subscription(CameraInfo, '/camera/depth/camera_info', self.info_init_callback, 10)
-        #self.model.fromCameraInfo(load_camera_info('orbbec336L/depth_camera_info.yaml'))
-        #等待 camera_info
+        self.info_msg = None
         self.get_logger().info('Waiting for /camera/depth/camera_info...')
         try:
-            msg = self.wait_for_camera_info(timeout_sec=3.0)
-            self.model.fromCameraInfo(msg)
+            self.info_msg = self.wait_for_camera_info()
             self.get_logger().info('Loaded camera info from topic.')
         except TimeoutError:
             self.get_logger().warn('Timeout waiting for /camera/depth/camera_info, loading from YAML instead.')
-            msg = load_camera_info('orbbec336L/depth_camera_info.yaml')
-            self.model.fromCameraInfo(msg)
-            self.get_logger().info('Loaded camera info from YAML.')
         self.create_subscription(Image, '/camera/depth/image_raw', self.depth_callback, 10)
         self.get_logger().info('Waiting for camera_info and depth frames...')
+        self.img = None
     '''
     def info_init_callback(self, msg):
         if self.cameraInfoInit:
@@ -71,7 +81,7 @@ class PixelToCamera(Node):
         self.model.fromCameraInfo(msg)
         self.cameraInfoInit = True
     '''
-    def wait_for_camera_info(self, timeout_sec=3.0):
+    def wait_for_camera_info(self, timeout_sec=1.0):
         #阻塞等待一次 /camera/depth/camera_info 消息
         future = rclpy.task.Future()
         def callback(msg):
@@ -84,18 +94,9 @@ class PixelToCamera(Node):
         return future.result()
 
     def depth_callback(self, msg):
-        if self.model.K is None:
-            return
-        #self.timelist[self.timeListHead] = time.time()
-        #self.get_logger().info(f"time interval: {self.timelist[self.timeListHead]-self.timelist[(self.timeListHead-1)%10]:.3f} s")
-        #self.get_logger().info(f"10 time average interval: {(self.timelist[self.timeListHead]-self.timelist[(self.timeListHead+1)%10])/10:.3f} s")
-        #self.timeListHead = (self.timeListHead + 1) % 10
-        #self.get_logger().info('size: {}x{}, encoding: {}'.format(msg.width, msg.height, msg.encoding))
-        depth_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough').astype(np.float32)
-        #u,v = map(int, input("Enter pixel u and v coordinates separated by space: ").split())
-        center_dep = pix_to_cam(msg.width // 2, msg.height // 2, depth_img[msg.height // 2, msg.width // 2] / 1000.0, self.model)[2]
-        self.get_logger().info(f"center_dep[{center_dep:.3f}] m")
-        
+        self.img = msg
+
+
 def main():
     rclpy.init()
     node = PixelToCamera()
