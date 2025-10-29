@@ -6,32 +6,7 @@ import numpy as np
 from image_geometry import PinholeCameraModel
 #import time
 import yaml
-
-def pix_to_cam(u, v, depth, model):
-    ray = model.projectPixelTo3dRay((u, v))
-    muit = 1.0 / ray[2]
-    X = ray[0] * muit * depth
-    Y = ray[1] * muit * depth
-    Z = ray[2] * muit * depth # Z = depth
-    return X, Y, Z
-
-def pixel_range_to_space(range, img, info = None):
-    bridge = CvBridge()
-    model = PinholeCameraModel()
-    if info is None:
-        model.fromCameraInfo(load_camera_info('orbbec336L/depth_camera_info.yaml'))
-    else:
-        model.fromCameraInfo(info)
-    depth_img = bridge.imgmsg_to_cv2(img, desired_encoding='passthrough').astype(np.float32) / 1000.0  # Convert mm to meters
-    depth_data = np.zeros((range[2]-range[0], range[3]-range[1], 3), dtype=np.float32)
-    for v in range(range[0], range[2]):
-        for u in range(range[1], range[3]):
-            depth = depth_img[v, u]
-            X, Y, Z = pix_to_cam(u, v, depth, model)
-            depth_data[v - range[0], u - range[1], 0] = X
-            depth_data[v - range[0], u - range[1], 1] = Y
-            depth_data[v - range[0], u - range[1], 2] = Z
-    return depth_data
+from scipy.signal import find_peaks
 
 def load_camera_info(yaml_path: str) -> CameraInfo:
     with open(yaml_path, 'r') as f:
@@ -58,6 +33,118 @@ def load_camera_info(yaml_path: str) -> CameraInfo:
     msg.roi.width = roi.get('width', 0)
     msg.roi.do_rectify = roi.get('do_rectify', False)
     return msg
+
+def pix_to_cam(u, v, depth, model):
+    ray = model.projectPixelTo3dRay((u, v))
+    muit = 1.0 / ray[2]
+    X = ray[0] * muit * depth
+    Y = ray[1] * muit * depth
+    Z = ray[2] * muit * depth # Z = depth
+    return X, Y, Z
+
+class DepthCamera:
+    def __init__(self):
+        self.bridge = CvBridge()
+        self.model = PinholeCameraModel()
+        self.bin_width = 0.005  # Histogram bin width in meters
+
+    def loadCameraInfo(self, info = None):
+        if info is None:
+            self.model.fromCameraInfo(load_camera_info('orbbec336L/depth_camera_info.yaml'))
+        else:
+            self.model.fromCameraInfo(info)
+
+    def pixelRangeToSpace(self, range, img):
+        depth_img = self.bridge.imgmsg_to_cv2(img, desired_encoding='passthrough').astype(np.float32) / 1000.0  # Convert mm to meters
+        depth_data = np.zeros((range[2]-range[0], range[3]-range[1], 3), dtype=np.float32)
+        for v in range(range[0], range[2]):
+            for u in range(range[1], range[3]):
+                depth = depth_img[v, u]
+                X, Y, Z = pix_to_cam(u, v, depth, self.model)
+                depth_data[v - range[0], u - range[1], 0] = X
+                depth_data[v - range[0], u - range[1], 1] = Y
+                depth_data[v - range[0], u - range[1], 2] = Z
+        return depth_data
+    
+    def depthImageFindCenter(self, range, img):
+        depth_img = self.bridge.imgmsg_to_cv2(img, desired_encoding='passthrough').astype(np.float32) / 1000.0  # Convert mm to meters
+        depth_need = depth_img[range[0]:range[2], range[1]:range[3]]
+        depth_valid = depth_need[~np.isnan(depth_need) & (depth_need != 0)]
+        if depth_valid.size == 0:
+            print("No valid depth data in the specified range.")
+            return None
+        # 建立深度直方图
+        depth_min, depth_max = np.min(depth_valid), np.max(depth_valid)
+        bins = int((depth_max - depth_min) / self.bin_width)
+        hist, bin_edges = np.histogram(depth_valid, bins=bins, range=(depth_min, depth_max))
+        centers = (bin_edges[:-1] + bin_edges[1:]) / 2  # 每个bin中心
+        # 寻找直方图中的峰值
+        peaks, props = find_peaks(hist, height=0.1*depth_valid.size) # 最小高度为总点数的10%
+        peak_positions = centers[peaks]
+        peak_heights = props["peak_heights"]
+        if len(peaks) == 0:
+            print("No significant peaks found in depth histogram.")
+            return []
+        # 合并接近的峰值
+        merge_thresh = 3 * self.bin_width # 合并阈值设为小于3个bin宽度（相邻或隔一个）
+        merged = []
+        cur_group = [0]
+        for i in range(1, len(peak_positions)):
+            if abs(peak_positions[i] - peak_positions[cur_group[-1]]) < merge_thresh:
+                cur_group.append(i)
+            else:
+                merged.append(cur_group)
+                cur_group = [i]
+        merged.append(cur_group)
+        # 计算每个大峰的中心和范围
+        peaks_merged = []
+        major_peak = None
+        for group in merged:
+            idx = peaks[group]
+            total_count = np.sum(hist[idx])
+            depth_range = (peak_positions[group[0]], peak_positions[group[-1]])
+            center_depth = np.mean(peak_positions[group])
+            peaks_merged.append({
+                'center': center_depth,
+                'count': int(total_count),
+                'range': depth_range
+            })
+            if total_count > 0.5*depth_valid.size: # 如果某个峰值占比超过50%，则认为是主要峰值
+                major_peak = peaks_merged[-1]
+                break
+            if total_count > 0.3*depth_valid.size and major_peak is None: # 如果某个峰值占比超过30%且没有超过50%的峰，则取深度最小的峰
+                major_peak = peaks_merged[-1]
+        print(f"Major peak found at depth {major_peak['center']:.3f} m , range [{major_peak['range'][0]:.3f}, {major_peak['range'][1]:.3f}] m, with count {major_peak['count']}, {major_peak['count']/depth_valid.size*100:.1f}% of valid points.") 
+        valid_pixels = self.findValidPix(major_peak['range'][0], major_peak['range'][1], depth_need)
+        center_u, center_v = self.findMassCenter(valid_pixels)
+        return center_u + range[1], center_v + range[0], major_peak['center']
+
+    def findValidPix(self, depth_floor, depth_ceiling, img):
+        depth_img = self.bridge.imgmsg_to_cv2(img, desired_encoding='passthrough').astype(np.float32) / 1000.0  # Convert mm to meters
+        #valid_pixels = [[0 for i in range(depth_img.shape[0])] for j in range(depth_img.shape[1])]
+        valid_pixels = np.zeros_like(depth_img, dtype=bool)
+        for v in range(depth_img.shape[0]):
+            for u in range(depth_img.shape[1]):
+                depth = depth_img[v, u]
+                if not np.isnan(depth) and depth >= depth_floor and depth <= depth_ceiling:
+                    valid_pixels[v, u] = 1
+        return valid_pixels
+    
+    def findMassCenter(self, valid_pixels):
+        sum_u = 0
+        sum_v = 0
+        count = 0
+        for v in range(valid_pixels.shape[0]):
+            for u in range(valid_pixels.shape[1]):
+                if valid_pixels[v, u] == 1:
+                    sum_u += u
+                    sum_v += v
+                    count += 1
+        if count == 0:
+            return None
+        center_u = sum_u / count
+        center_v = sum_v / count
+        return center_u, center_v
 
 class PixelToCamera(Node):
     def __init__(self):
