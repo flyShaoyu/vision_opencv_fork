@@ -51,6 +51,8 @@ class DepthCamera:
         self.bin_width = 0.01  # Histogram bin width in meters
         self.d2c_r = None
         self.d2c_t = None
+        self.peak_width = 3 * self.bin_width
+        self.bin_min_percent = 0.01
 
     def loadCameraInfo(self, info_d = None, info_c = None, info_d2c = None):
         if info_d is None:
@@ -104,11 +106,11 @@ class DepthCamera:
         bins = max(1, int((depth_max - depth_min) / self.bin_width))
         hist, bin_edges = np.histogram(depth_valid, bins=bins, range=(depth_min, depth_max))
         centers = (bin_edges[:-1] + bin_edges[1:]) / 2  # 每个bin中心
-        # 寻找直方图中大于10%的数据作为峰值
+        # 寻找直方图中大于bin_min_percent的数据作为峰值
         #peaks, props = find_peaks(hist, height=0.1*depth_valid.size) # 最小高度为总点数的10%
         peak_tmp = []
         for i in range(len(hist)):
-            if hist[i] > 0.1 * depth_valid.size:
+            if hist[i] > self.bin_min_percent * depth_valid.size:
                 peak_tmp.append(i)
         peaks = np.array(peak_tmp)
         if len(peaks) == 0:
@@ -117,11 +119,10 @@ class DepthCamera:
         peak_positions = centers[peaks]
         #peak_heights = props["peak_heights"]
         # 合并接近的峰值
-        merge_thresh = 5 * self.bin_width # 合并阈值设为小于5个bin宽度
         merged = []
         cur_group = [0]
         for i in range(1, len(peak_positions)):
-            if abs(peak_positions[i] - peak_positions[cur_group[-1]]) < merge_thresh:
+            if abs(peak_positions[i] - peak_positions[cur_group[-1]]) < self.peak_width:
                 cur_group.append(i)
             else:
                 merged.append(cur_group)
@@ -206,6 +207,11 @@ class PixelToCamera(Node):
         self.depth_img = None
         self.color_img = None
         self.range = [103,485,247,535] # test range [左上，右下]
+
+        cv2.namedWindow("Color Image")
+        cv2.setMouseCallback("Color Image", self.mouse_callback)
+        self.one_point_clicked = False
+        self.point_chosen = [(0,0),(0,0)]
     '''
     def info_init_callback(self, msg):
         if self.cameraInfoInit:
@@ -235,6 +241,10 @@ class PixelToCamera(Node):
         cv2_color_img = self.depth_camera.bridge.imgmsg_to_cv2(self.color_img, desired_encoding='passthrough')
         cv2_depth_img = self.depth_camera.bridge.imgmsg_to_cv2(self.depth_img, desired_encoding='passthrough').astype(np.uint16)
         color_resized = cv2.resize(cv2_color_img, (cv2_depth_img.shape[1], cv2_depth_img.shape[0]), interpolation=cv2.INTER_LINEAR)
+        # 深度图叠加到彩色图，颜色表示深度
+        depth_colored = cv2.applyColorMap(cv2.convertScaleAbs(cv2_depth_img, alpha=0.03), cv2.COLORMAP_JET)
+        overlay = cv2.addWeighted(color_resized, 0.6, depth_colored, 0.4, 0)
+        color_resized = overlay
         center = self.depth_camera.depthImageFindCenter(self.range, self.depth_img)
         if center is not None:
             u, v, depth, valid_points_count = center
@@ -249,6 +259,21 @@ class PixelToCamera(Node):
         cv2.imshow("Color Image", color_resized)
         cv2.waitKey(1)
 
+    def mouse_callback(self, event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            if not self.one_point_clicked:
+                self.point_chosen[0] = (x, y)
+                self.one_point_clicked = True
+                self.get_logger().info(f"First point chosen at ({x}, {y})")
+            else:
+                self.point_chosen[1] = (x, y)
+                self.one_point_clicked = False
+                x1 = min(self.point_chosen[0][0], self.point_chosen[1][0])
+                y1 = min(self.point_chosen[0][1], self.point_chosen[1][1])
+                x2 = max(self.point_chosen[0][0], self.point_chosen[1][0])
+                y2 = max(self.point_chosen[0][1], self.point_chosen[1][1])
+                self.range = [y1, x1, y2, x2]
+                self.get_logger().info(f"Second point chosen at ({x}, {y}), new range set to [{y1}, {x1}, {y2}, {x2}]")
 
 
 def main():
