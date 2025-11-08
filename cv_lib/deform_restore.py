@@ -13,7 +13,7 @@ dist_coeffs = np.array([
 
 def get3dPoints(center, shape):
     '''
-    计算平面四个顶点的3D坐标
+    计算平面四个顶点相机坐标系下的3D坐标
     center: 平面中心点的3D相对坐标 (x, y, z)
     shape: 平面的宽高和法向量 (width, height, (nx, ny, nz))
     return: 4个顶点的3D坐标，按顺时针顺序排列
@@ -45,7 +45,7 @@ def get3dPoints(center, shape):
     points_3d = (R_plane @ plane_local.T).T + np.array(center, dtype=np.float32)
     return points_3d
 
-def Let3DToPlane(points_3d, camera_matrix, dist_coeffs, rvec=None, tvec=None):
+def trans3DToPlane(points_3d, camera_matrix, dist_coeffs, rvec=None, tvec=None):
     '''
     将3D点投影到图像平面上
     points_3d: Nx3的3D点数组,顺时针
@@ -81,7 +81,7 @@ def ROIRestore(img, points_2d, image_shape = [500,500]):
     warped = cv2.warpPerspective(img, Hmat, (w_out, h_out))
     return warped
 
-def DeformRestore(img, point, shape, camera_matrix = camera_matrix, dist_coeffs = dist_coeffs, rvec=None, tvec=None, image_shape = [500,500]):
+def deformRestore(img, point, shape, camera_matrix = camera_matrix, dist_coeffs = dist_coeffs, rvec=None, tvec=None, image_shape = [500,500]):
     ''' 
     根据3D点和相机参数还原图像
     img: 输入图像
@@ -95,7 +95,7 @@ def DeformRestore(img, point, shape, camera_matrix = camera_matrix, dist_coeffs 
     return: 还原展开后图像
     '''
     points_3d = get3dPoints(point, shape)
-    points_2d = Let3DToPlane(points_3d, camera_matrix, dist_coeffs, rvec=rvec, tvec=tvec)
+    points_2d = trans3DToPlane(points_3d, camera_matrix, dist_coeffs, rvec=rvec, tvec=tvec)
     return ROIRestore(img, points_2d, image_shape=image_shape)
 
 if __name__ == "__main__":
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     img = cv2.imread("test_deform.jpg")
     center = (0, 0, 0.5)  # 平面中心点的3D坐标
     shape = (0.3, 0.2, (0, 0, 1))  # 平面的宽高和法向量
-    restored_img = DeformRestore(img, center, shape)
+    restored_img = deformRestore(img, center, shape)
     cv2.imshow("Restored Image", restored_img)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
