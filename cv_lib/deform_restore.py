@@ -99,9 +99,9 @@ def deformRestore(img, point, shape, camera_matrix = camera_matrix, dist_coeffs 
 
 if __name__ == "__main__":
     # 测试代码
-    img = cv2.imread("test_deform.jpg")
-    center = (0, 0, 0.5)  # 平面中心点的3D坐标
-    shape = (0.3, 0.2, (0, 0, 1))  # 平面的宽高和法向量
+    img = cv2.imread("cv_lib/color_image/retrieved_image.jpg")
+    center = (0, 0, 0.6)  # 平面中心点的3D坐标
+    shape = (0.35, 0.35, (0, 0, 1))  # 平面的宽高和法向量
     restored_img = deformRestore(img, center, shape)
     cv2.imshow("Restored Image", restored_img)
     cv2.waitKey(0)
