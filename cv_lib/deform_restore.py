@@ -102,7 +102,7 @@ if __name__ == "__main__":
     # 测试代码
     img = cv2.imread("cv_lib/color_image/retrieved_image.jpg")
     img = cv2.resize(img, (1280, 800))
-    center = (0, 0, 0.6)  # 平面中心点的3D坐标
+    center = (0.457, 0.017, 0.6)  # 平面中心点的3D坐标
     shape = (0.35, 0.35, (0, 0, 1))  # 平面的宽高和法向量
     restored_img = deformRestore(img, center, shape)
     cv2.imshow("Restored Image", restored_img)
