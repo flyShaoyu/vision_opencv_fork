@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-# 这个内参矩阵和畸变系数是深度相机的
+# 这个内参矩阵和畸变系数是深度相机彩色图像的
 camera_matrix = np.array([
     [611.544189453125, 0.0, 636.7078857421875, 0.0, 611.3428955078125, 397.55560302734375, 0.0, 0.0, 1.0]      
 ], dtype=np.float32)
@@ -93,6 +93,7 @@ def deformRestore(img, point, shape, camera_matrix = camera_matrix, dist_coeffs 
     image_shape: 需要图像的形状 (height, width)
     return: 还原展开后图像
     '''
+    camera_matrix = np.array(camera_matrix, dtype=np.float64).reshape(3, 3)
     points_3d = get3dPoints(point, shape)
     points_2d = trans3DToPlane(points_3d, camera_matrix, dist_coeffs, rvec=rvec, tvec=tvec)
     return ROIRestore(img, points_2d, image_shape=image_shape)
@@ -100,6 +101,7 @@ def deformRestore(img, point, shape, camera_matrix = camera_matrix, dist_coeffs 
 if __name__ == "__main__":
     # 测试代码
     img = cv2.imread("cv_lib/color_image/retrieved_image.jpg")
+    img = cv2.resize(img, (1280, 800))
     center = (0, 0, 0.6)  # 平面中心点的3D坐标
     shape = (0.35, 0.35, (0, 0, 1))  # 平面的宽高和法向量
     restored_img = deformRestore(img, center, shape)

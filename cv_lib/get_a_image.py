@@ -28,7 +28,7 @@ def get_a_image():
 if __name__ == "__main__":
     img = get_a_image()
     if img is not None:
-        img = cv2.resize(img, (848, 480))
+        img = cv2.resize(img, (1280, 800))
         cv2.imshow("Retrieved Image", img)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
