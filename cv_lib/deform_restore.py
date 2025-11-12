@@ -44,7 +44,7 @@ def get3dPoints(center, shape):
     points_3d = (R_plane @ plane_local.T).T + np.array(center, dtype=np.float32)
     return points_3d
 
-def trans3DToPlane(points_3d, camera_matrix, dist_coeffs, rvec=None, tvec=None):
+def trans3DToPlane(points_3d, camera_matrix = camera_matrix, dist_coeffs = dist_coeffs, rvec=None, tvec=None):
     '''
     将3D点投影到图像平面上
     points_3d: Nx3的3D点数组,顺时针
@@ -54,6 +54,7 @@ def trans3DToPlane(points_3d, camera_matrix, dist_coeffs, rvec=None, tvec=None):
     tvec: 平移向量 (可选)
     return: 投影后的2D点数组 Nx2
     '''
+    camera_matrix = np.array(camera_matrix, dtype=np.float64).reshape(3, 3)
     if rvec is None:
         rvec = np.zeros((3, 1), dtype=np.float32)
     if tvec is None:

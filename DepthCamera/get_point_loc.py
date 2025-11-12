@@ -3,6 +3,7 @@ from cv_bridge import CvBridge
 import numpy as np
 from image_geometry import PinholeCameraModel
 import yaml
+import deform_restore
 
 import os
 os.environ["OMP_NUM_THREADS"] = "8"
@@ -93,7 +94,8 @@ class PixelToCamera(Node):
         self.get_logger().info('Waiting for camera_info and depth frames...')
         self.depth_img = None
         self.color_img = None
-        self.point = (240, 424)
+        self.points = [(200,400), (200,450), (300,400), (300,400)]
+        self.click_point = 0
 
         cv2.namedWindow("Color Image")
         cv2.setMouseCallback("Color Image", self.mouse_callback)
@@ -133,26 +135,58 @@ class PixelToCamera(Node):
         depth_colored = cv2.applyColorMap(cv2.convertScaleAbs(cv2_depth_img, alpha=0.03), cv2.COLORMAP_JET)
         overlay = cv2.addWeighted(color_resized, 0.6, depth_colored, 0.4, 0)
         color_resized = overlay
-        u, v = self.point
-        depth = cv2_depth_img[int(v), int(u)] / 1000.0  # 转换为米
-        #print(cv2_color_img.shape, color_resized.shape)
-        self.get_logger().info(f"point at pixel ({u:.1f}, {v:.1f}) with depth {depth:.3f} m")
-        cv2.circle(color_resized, (int(u), int(v)), 5, (65535,65535,0), -1) # 黄色圆点
-        # 显示圆点坐标及深度
-        x,y,z = pix_to_cam(u, v, depth, self.depth_camera.model_d)
-        if z != 0:
-            cv2.putText(color_resized, f"({x:.3f},{y:.3f},{z:.3f})", (int(u)+10, int(v)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (65535,65535,0), 1)
-        else:
-            cv2.putText(color_resized, f"(None)", (int(u)+10, int(v)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (65535,65535,0), 1)
-        cv2.putText(color_resized, f"({u},{v})", (int(u)+10, int(v)+10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (65535,65535,0), 1)
+        count = 0
+        for (u, v) in self.points:
+            if count >= self.click_point:
+                break
+            depth = cv2_depth_img[int(v), int(u)] / 1000.0  # 转换为米
+            #print(cv2_color_img.shape, color_resized.shape)
+            cv2.circle(color_resized, (int(u), int(v)), 5, (65535,65535,0), -1) # 黄色圆点
+            # 显示所有圆点坐标及深度
+            x,y,z = pix_to_cam(u, v, depth, self.depth_camera.model_d)
+            if z != 0:
+                cv2.putText(color_resized, f"({x:.3f},{y:.3f},{z:.3f})", (int(u)+10, int(v)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (65535,65535,0), 1)
+            else:
+                cv2.putText(color_resized, f"(None)", (int(u)+10, int(v)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (65535,65535,0), 1)
+            cv2.putText(color_resized, f"({u},{v})", (int(u)+10, int(v)+10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (65535,65535,0), 1)
+            count += 1
         cv2.imshow("Color Image", color_resized)
         cv2.waitKey(1)
 
     def mouse_callback(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
-            self.point = (x, y)
-            self.one_point_clicked = True
-            self.get_logger().info(f"point chosen at ({x}, {y})")
+            depth = self.depth_camera.bridge.imgmsg_to_cv2(self.depth_img, desired_encoding='passthrough').astype(np.uint16)
+            depth = depth[y, x] / 1000.0  # 转换为米
+            if depth != 0:
+                x_3d, y_3d, z_3d = pix_to_cam(x, y, depth, self.depth_camera.model_d)
+                if self.click_point >= len(self.points):
+                    self.click_point = 0
+                self.points[self.click_point] = (x, y)
+                self.get_logger().info(f"point chosen at ({x}, {y})")
+                if self.click_point >= len(self.points)-1:
+                    needed_points = self.points
+                    self.get_logger().info(f"All points chosen: {needed_points}")
+                    # 顺时针将点排序
+                    center = np.mean(needed_points, axis=0)
+                    sorted_points = sorted(needed_points, key=lambda p: np.arctan2(p[1] - center[1], p[0] - center[0]))
+                    sorted_3d_points = []
+                    for (u, v) in sorted_points:
+                        depth = self.depth_camera.bridge.imgmsg_to_cv2(self.depth_img, desired_encoding='passthrough').astype(np.uint16)
+                        depth = depth[v, u] / 1000.0  # 转换为米
+                        x3d, y3d, z3d = pix_to_cam(u, v, depth, self.depth_camera.model_d)
+                        sorted_3d_points.append([x3d, y3d, z3d])
+                    self.get_logger().info(f"3D Points: {[[round(x, 2) for x in point] for point in sorted_3d_points]}")
+                    sorted_3d_points = np.array(sorted_3d_points, dtype=np.float32)
+                    points_2d = deform_restore.trans3DToPlane(sorted_3d_points)
+                    warped = deform_restore.ROIRestore(
+                        self.depth_camera.bridge.imgmsg_to_cv2(self.color_img, desired_encoding='passthrough'),
+                        points_2d
+                    )
+                    cv2.imshow("Warped Image", warped)
+                    cv2.waitKey(0)
+                    cv2.destroyWindow("Warped Image")
+                self.click_point += 1
+
             
 
 

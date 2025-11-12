@@ -31,6 +31,8 @@ RUN pip install zmq "numpy<2.0"
 RUN pip install roslibpy pyzmq
 # 安装实验跟踪库
 RUN pip install comet_ml
+# 安装Open3D
+RUN pip install open3d
 
 USER root
 RUN echo "source /opt/ros/humble/setup.bash" >> /home/${USERNAME}/.bashrc \
