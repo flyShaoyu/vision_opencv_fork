@@ -84,7 +84,7 @@ def clahe_on_v(img_hsv, clip=2.0, grid=(8,8)): # 对 V 通道做 CLAHE
     img_hsv[:,:,2] = clahe.apply(img_hsv[:,:,2])
     return img_hsv
 
-def get_red_blue_mask(img_hsv): # 分割红色和蓝色区域
+def get_red_blue_mask(img_hsv, blue = True, red = True, kernel_size = (7,7)): # 分割红色和蓝色区域
 
     # 自适应 V 下限：取 V 的某个分位数作为基础，再给个下限保护
     #v_p20 = np.percentile(img_hsv[:,:,2], 20)      # 你也可以试 10 或 30
@@ -97,24 +97,30 @@ def get_red_blue_mask(img_hsv): # 分割红色和蓝色区域
 
     s_min = 80  # 纯色物块建议 70~120 之间调；越高越抗误检但可能漏暗处边缘
 
-    # 蓝色 H 范围（OpenCV H: 0~179）
-    lower_blue = np.array([95,  s_min, v_min])
-    upper_blue = np.array([135, 255, 255])
-    mask_blue = cv2.inRange(img_hsv, lower_blue, upper_blue)
+    if blue:
+        # 蓝色 H 范围（OpenCV H: 0~179）
+        lower_blue = np.array([95,  s_min, v_min])
+        upper_blue = np.array([135, 255, 255])
+        mask_blue = cv2.inRange(img_hsv, lower_blue, upper_blue)
+    else:
+        mask_blue = 0
 
+    if red:
     # 红色两段
-    lower_red1 = np.array([0,   s_min, v_min])
-    upper_red1 = np.array([10,  255,   255])
-    lower_red2 = np.array([170, s_min, v_min])
-    upper_red2 = np.array([179, 255,   255])
-    mask_red = cv2.inRange(img_hsv, lower_red1, upper_red1) | cv2.inRange(img_hsv, lower_red2, upper_red2)
+        lower_red1 = np.array([0,   s_min, v_min])
+        upper_red1 = np.array([10,  255,   255])
+        lower_red2 = np.array([170, s_min, v_min])
+        upper_red2 = np.array([179, 255,   255])
+        mask_red = cv2.inRange(img_hsv, lower_red1, upper_red1) | cv2.inRange(img_hsv, lower_red2, upper_red2)
+    else:
+        mask_red = 0
 
     mask = mask_blue | mask_red
 
     # 形态学清理
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7,7))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel, iterations=1)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, kernel_size)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel, iterations=1) # 腐蚀+膨胀，去小块噪声
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1) # 膨胀+腐蚀，补洞
 
     return mask
 
@@ -130,12 +136,14 @@ def pop_color(img_hsv, mask, s_gain=1.35, v_gain=1.05): # 提升mask区域的饱
 
 hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-hsv2 = clahe_on_v(hsv, clip=2.0)         # 稳暗光
+hsv = clahe_on_v(hsv, clip=2.0)         # 稳暗光
 
 time_end = time.time()
 print("time3: {:.3f} s".format(time_end - time_start))
 
-mask = get_red_blue_mask(hsv2)            # 分割红/蓝
+mask = get_red_blue_mask(hsv, kernel_size=(3,3))            # 分割红/蓝
+mask_b = get_red_blue_mask(hsv, blue=True, red=False, kernel_size=(5,5))  # 仅蓝色
+mask_r = get_red_blue_mask(hsv, blue=False, red=True, kernel_size=(5,5))  # 仅红色
 
 time_end = time.time()
 print("time4: {:.3f} s".format(time_end - time_start))
@@ -150,9 +158,12 @@ img  = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 time_end = time.time()
 print("Light preproc time: {:.3f} s".format(time_end - time_start))
 
-cv2.namedWindow("Canny", cv2.WINDOW_NORMAL)
-cv2.imshow("Canny", mask)
-cv2.moveWindow("Canny", 20, 600)
+cv2.namedWindow("MaskB", cv2.WINDOW_NORMAL)
+cv2.imshow("MaskB", mask_b)
+cv2.moveWindow("MaskB", 20, 600)
+cv2.namedWindow("MaskR", cv2.WINDOW_NORMAL)
+cv2.imshow("MaskR", mask_r)
+cv2.moveWindow("MaskR", 600, 600)
 cv2.namedWindow("Enhanced", cv2.WINDOW_NORMAL)
 cv2.imshow("Enhanced", img)
 cv2.moveWindow("Enhanced", 600, 20)
