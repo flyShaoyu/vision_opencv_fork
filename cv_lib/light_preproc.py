@@ -2,82 +2,52 @@ import cv2
 import numpy as np
 import time
 
-time_start = time.time()
 
-img_name = "5.jpg"
-img_path = "photos/" + img_name
-
-# img_name = "restored_4.jpg"
-# img_path = "restored_images/" + img_name
-
-img = cv2.imread(img_path)
-img_original = img.copy()
-
-# 调整整体亮度到目标均值
-
-# mu_target = 128.0
-# med = np.median(img)
-# alpha = mu_target / med
-# img = np.clip(img * alpha, 0, 255).astype(np.uint8)
-
-# img_dn = cv2.fastNlMeansDenoisingColored(average_light, None,
-#                                         h=3, hColor=3,
-#                                         templateWindowSize=5,
-#                                         searchWindowSize=21)
-
-
-# 按亮度分布自适应重映射
-# CLAHE 局部自适应均衡
-
-# lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-# l, a, b = cv2.split(lab)
-
-# clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(15,15))
-# l2 = clahe.apply(l)
-
-# lab2 = cv2.merge([l2,a,b])
-# img = cv2.cvtColor(lab2, cv2.COLOR_LAB2BGR)
-
-time_end = time.time()
-print("Clahe time: {:.3f} s".format(time_end - time_start))
 
 # 增强饱和度
-
-hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-
-# s = np.clip(s * 1.5, 0, 255).astype(np.uint8)
-hsv[:,:,1] = cv2.multiply(hsv[:,:,1], 1.5, dtype=cv2.CV_8U)
+def preproc_hsv(hsv):
+    # s = np.clip(s * 1.5, 0, 255).astype(np.uint8)
+    hsv[:,:,1] = cv2.multiply(hsv[:,:,1], 1.1, dtype=cv2.CV_8U) # 改变饱和度，1.1倍
 
 
 
-#hsv2 = cv2.merge([h,s,v])
-#img = cv2.cvtColor(hsv2, cv2.COLOR_HSV2BGR)
+    # time_end = time.time()
+    # print("time: {:.3f} s".format(time_end - time_start))
 
-time_end = time.time()
-print("time: {:.3f} s".format(time_end - time_start))
+    # 调整整体亮度到目标均值
 
-# 再一次调整整体亮度到目标均值
+    mu_target = 180.0
+    #med = np.median(img)
+    med = cv2.mean(hsv[:,:,2])[0]
+    alpha = mu_target / med
+    hsv[:,:,2] = cv2.convertScaleAbs(hsv[:,:,2], alpha=alpha, beta=0)
 
-mu_target = 180.0
-#med = np.median(img)
-med = cv2.mean(hsv[:,:,2])[0]
-alpha = mu_target / med
-img = cv2.convertScaleAbs(img, alpha=alpha, beta=0)
+    return hsv
 
 
-time_end = time.time()
-print("Initial light preproc time: {:.3f} s".format(time_end - time_start))
+# time_end = time.time()
+# print("Initial light preproc time: {:.3f} s".format(time_end - time_start))
 
-def gray_world_wb(img_bgr): # 灰度世界白平衡
-    img = img_bgr.astype(np.float32)
-    b,g,r = cv2.split(img)
-    mb, mg, mr = np.mean(b), np.mean(g), np.mean(r)
+def gray_world_wb(img):
+    # 统计均值（uint8 上直接算）
+    mb = cv2.mean(img[:, :, 0])[0]
+    mg = cv2.mean(img[:, :, 1])[0]
+    mr = cv2.mean(img[:, :, 2])[0]
+
     m = (mb + mg + mr) / 3.0
-    b *= (m / (mb + 1e-6))
-    g *= (m / (mg + 1e-6))
-    r *= (m / (mr + 1e-6))
-    out = cv2.merge([b,g,r])
-    return np.clip(out, 0, 255).astype(np.uint8)
+    kb = m / (mb + 1e-6)
+    kg = m / (mg + 1e-6)
+    kr = m / (mr + 1e-6)
+
+    # 3x3 颜色变换矩阵
+    M = np.array([
+        [kb, 0,  0 ],
+        [0,  kg, 0 ],
+        [0,  0,  kr]
+    ], dtype=np.float32)
+
+    # OpenCV 内部完成：乘矩阵 + 饱和 + uint8
+    return cv2.transform(img, M)
 
 def clahe_on_v(img_hsv, clip=2.0, grid=(8,8)): # 对 V 通道做 CLAHE
     clahe = cv2.createCLAHE(clipLimit=clip, tileGridSize=grid)
@@ -95,7 +65,7 @@ def get_red_blue_mask(img_hsv, blue = True, red = True, kernel_size = (7,7)): # 
 
     v_min = int(max(20, v_p20 * 0.6)) # 暗光时别卡太高，亮时自动提高一点
 
-    s_min = 80  # 纯色物块建议 70~120 之间调；越高越抗误检但可能漏暗处边缘
+    s_min = 90  # 纯色物块建议 70~120 之间调；越高越抗误检但可能漏暗处边缘
 
     if blue:
         # 蓝色 H 范围（OpenCV H: 0~179）
@@ -132,42 +102,59 @@ def pop_color(img_hsv, mask, s_gain=1.35, v_gain=1.05): # 提升mask区域的饱
 
     return img_hsv
 
-# img = gray_world_wb(img)                 # 稳白平衡
+if __name__ == "__main__":
 
-hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    time_start = time.time()
 
-hsv = clahe_on_v(hsv, clip=2.0)         # 稳暗光
+    img_name = "5.jpg"
+    img_path = "photos/" + img_name
 
-time_end = time.time()
-print("time3: {:.3f} s".format(time_end - time_start))
+    # img_name = "restored_4.jpg"
+    # img_path = "restored_images/" + img_name
 
-mask = get_red_blue_mask(hsv, kernel_size=(3,3))            # 分割红/蓝
-mask_b = get_red_blue_mask(hsv, blue=True, red=False, kernel_size=(5,5))  # 仅蓝色
-mask_r = get_red_blue_mask(hsv, blue=False, red=True, kernel_size=(5,5))  # 仅红色
+    img = cv2.imread(img_path)
+    img_original = img.copy()
 
-time_end = time.time()
-print("time4: {:.3f} s".format(time_end - time_start))
+    # hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-#canny = cv2.Canny(mask, 100, 200)
-#canny_dilated = cv2.dilate(canny, cv2.getStructuringElement(cv2.MORPH_RECT, (3,3)), iterations=5) # 膨胀边缘，覆盖更宽区域
-hsv  = pop_color(hsv, mask, 1.4, 1.0) 
-img  = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    # img = gray_world_wb(img)                 # 稳白平衡 （效果不好）
 
-#img += cv2.cvtColor(canny_dilated, cv2.COLOR_GRAY2BGR) * np.array([255,0,255], dtype=np.uint8)
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-time_end = time.time()
-print("Light preproc time: {:.3f} s".format(time_end - time_start))
+    hsv = preproc_hsv(hsv)                  # 初步亮度/饱和度调整
 
-cv2.namedWindow("MaskB", cv2.WINDOW_NORMAL)
-cv2.imshow("MaskB", mask_b)
-cv2.moveWindow("MaskB", 20, 600)
-cv2.namedWindow("MaskR", cv2.WINDOW_NORMAL)
-cv2.imshow("MaskR", mask_r)
-cv2.moveWindow("MaskR", 600, 600)
-cv2.namedWindow("Enhanced", cv2.WINDOW_NORMAL)
-cv2.imshow("Enhanced", img)
-cv2.moveWindow("Enhanced", 600, 20)
-cv2.namedWindow("Original", cv2.WINDOW_NORMAL)
-cv2.imshow("Original", img_original)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+    hsv = clahe_on_v(hsv, clip=2.0)         # 稳暗光
+
+    # time_end = time.time()
+    # print("time3: {:.3f} s".format(time_end - time_start))
+
+    mask = get_red_blue_mask(hsv, kernel_size=(3,3))            # 分割红/蓝
+    mask_b = get_red_blue_mask(hsv, blue=True, red=False, kernel_size=(5,5))  # 仅蓝色
+    mask_r = get_red_blue_mask(hsv, blue=False, red=True, kernel_size=(5,5))  # 仅红色
+
+    time_end = time.time()
+    print("time4: {:.3f} s".format(time_end - time_start))
+
+    #canny = cv2.Canny(mask, 100, 200)
+    #canny_dilated = cv2.dilate(canny, cv2.getStructuringElement(cv2.MORPH_RECT, (3,3)), iterations=5) # 膨胀边缘，覆盖更宽区域
+    hsv  = pop_color(hsv, mask, 1.4, 1.0) 
+    img  = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+
+    #img += cv2.cvtColor(canny_dilated, cv2.COLOR_GRAY2BGR) * np.array([255,0,255], dtype=np.uint8)
+
+    time_end = time.time()
+    print("Light preproc time: {:.3f} s".format(time_end - time_start))
+
+    cv2.namedWindow("MaskB", cv2.WINDOW_NORMAL)
+    cv2.imshow("MaskB", mask_b)
+    cv2.moveWindow("MaskB", 20, 600)
+    cv2.namedWindow("MaskR", cv2.WINDOW_NORMAL)
+    cv2.imshow("MaskR", mask_r)
+    cv2.moveWindow("MaskR", 600, 600)
+    cv2.namedWindow("Enhanced", cv2.WINDOW_NORMAL)
+    cv2.imshow("Enhanced", img)
+    cv2.moveWindow("Enhanced", 600, 20)
+    cv2.namedWindow("Original", cv2.WINDOW_NORMAL)
+    cv2.imshow("Original", img_original)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()

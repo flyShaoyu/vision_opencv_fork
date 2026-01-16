@@ -22,3 +22,11 @@ camera:
     backlight_compensation: 0
 
     power_line_frequency: 1       # 0:disabled 1:50 Hz 2: 60 Hz
+
+  udev:
+    commend: sudo sh -c 'echo \"KERNEL==\"video*\", SUBSYSTEM==\"video4linux\", \
+        ATTRS{idVendor}==\"1d6c\", ATTRS{idProduct}==\"0103\", \
+        ATTRS{serial}==\"01.00.00\", \
+        MODE:=\"0777\", GROUP:=\"video\", \
+        SYMLINK+=\"usb_camera_1\"" \
+        > /etc/udev/rules.d/99-usb-camera.rules'
