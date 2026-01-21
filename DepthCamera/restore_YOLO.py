@@ -68,7 +68,7 @@ class RestoreYOLO(Node):
         self.get_logger().info('Waiting for color frames...')
         self.time_s = 0
         self.count = 0
-        self.yolo_model = YOLO("best.pt")
+        self.yolo_model = YOLO("1.20.pt")
 
         cv2.namedWindow("ROI Image", cv2.WINDOW_NORMAL)
         cv2.resizeWindow("ROI Image", 800, 800)
@@ -84,9 +84,9 @@ class RestoreYOLO(Node):
 
     def color_callback(self, msg):
         color_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8').astype(np.uint8)
-        roi_img, roi_2d = img_preprocess(color_img, self.depression_angle, target_loc=target_loc, target_direct=0, target_size=target_size)
-        #roi_img = color_img
-        #roi_2d = np.array([[100,100],[600,100],[600,600],[100,600]])
+        # roi_img, roi_2d = img_preprocess(color_img, self.depression_angle, target_loc=target_loc, target_direct=0, target_size=target_size)
+        roi_img = color_img
+        roi_2d = np.array([[100,100],[600,100],[600,600],[100,600]])
         result = get_yolo_result(self.yolo_model, roi_img)
         # 绘制roi区域
         for i in range(4):

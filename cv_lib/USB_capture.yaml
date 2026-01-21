@@ -19,7 +19,7 @@ camera:
     gamma: 100
     saturation: 50
     sharpness: 2
-    backlight_compensation: 0
+    backlight_compensation: 10
 
     power_line_frequency: 1       # 0:disabled 1:50 Hz 2: 60 Hz
 

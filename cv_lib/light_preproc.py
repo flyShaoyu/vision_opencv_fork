@@ -5,10 +5,9 @@ import time
 
 
 # 增强饱和度
-def preproc_hsv(hsv):
+def preproc_hsv(hsv, s_gain=1.1, v_gain=1.5):
     # s = np.clip(s * 1.5, 0, 255).astype(np.uint8)
-    hsv[:,:,1] = cv2.multiply(hsv[:,:,1], 1.1, dtype=cv2.CV_8U) # 改变饱和度，1.1倍
-
+    hsv[:,:,1] = cv2.multiply(hsv[:,:,1], s_gain, dtype=cv2.CV_8U) # 改变饱和度，1.1倍
 
 
     # time_end = time.time()
@@ -16,7 +15,7 @@ def preproc_hsv(hsv):
 
     # 调整整体亮度到目标均值
 
-    mu_target = 180.0
+    mu_target = v_gain * 128
     #med = np.median(img)
     med = cv2.mean(hsv[:,:,2])[0]
     alpha = mu_target / med
@@ -106,7 +105,7 @@ if __name__ == "__main__":
 
     time_start = time.time()
 
-    img_name = "5.jpg"
+    img_name = "2.jpg"
     img_path = "photos/" + img_name
 
     # img_name = "restored_4.jpg"
