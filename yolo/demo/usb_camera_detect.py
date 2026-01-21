@@ -30,7 +30,7 @@ while True:
     if not ret:
         break
     
-    results = model(frame, conf=0.95, verbose=False)
+    results = model(frame, conf=0.9, verbose=False)
     
     shelf = None
     kfs = []

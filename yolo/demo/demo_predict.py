@@ -3,7 +3,7 @@ import cv2
 
 # 加载并检测
 model = YOLO("best.pt")
-results = model("test.jpg", conf=0.95)
+results = model("test.jpg", conf=0.9)
 
 # 处理结果
 img = cv2.imread("test.jpg")
