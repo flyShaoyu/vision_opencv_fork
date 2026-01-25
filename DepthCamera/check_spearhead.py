@@ -1,18 +1,21 @@
 import numpy as np
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
+
+# from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, qos_profile_sensor_data
+
 # qos = QoSProfile(
 #     depth=1,  # 只保留最新一帧
 #     reliability=QoSReliabilityPolicy.BEST_EFFORT,  # 尽量保证丢帧而不阻塞
 #     history=QoSHistoryPolicy.KEEP_LAST          # 只保存最后 depth 帧
 # )
+
 # 子区域局部中心（立方体坐标系）
 x_centers = np.array([-0.5, -0.3, -0.1, 0.1, 0.3, 0.5])  # m
-                            np.zeros_like(x_centers),
 T_local_centers = np.stack([x_centers,
+                            np.zeros_like(x_centers),
                             np.zeros_like(x_centers)], axis=1)
 
-hx, hy, hz = 0.10, 0.10, 0.15  # 200x200x300 mm 左右宽*上下高*前后长 需要适当修改 
 # 尺寸半长
+hx, hy, hz = 0.10, 0.10, 0.15  # 200x200x300 mm 左右宽*上下高*前后长 需要适当修改 
 
 def check_spearhead(pc, model, T_box_cam, R_box_cam):
     '''
@@ -38,12 +41,20 @@ def rot_x(deg):
         [0,np.sin(rad), np.cos(rad)]
     ])
 
-    rad = np.deg2rad(deg)
 def rot_y(deg):
+    rad = np.deg2rad(deg)
     return np.array([
         [ np.cos(rad),0,np.sin(rad)],
         [0,1,0],
         [-np.sin(rad),0,np.cos(rad)]
+    ])
+
+def rot_z(deg):
+    rad = np.deg2rad(deg)
+    return np.array([
+        [np.cos(rad),-np.sin(rad),0],
+        [np.sin(rad), np.cos(rad),0],
+        [0,0,1]
     ])
 
 def filter_rotated_subboxes(pc_dep, T_box_cam, R_box_cam, model):
@@ -52,19 +63,19 @@ def filter_rotated_subboxes(pc_dep, T_box_cam, R_box_cam, model):
     :param pts_cam:   Nx3的3D点数组 :type:`np.ndarray`
     :return: 6个布尔数组，表示每个点是否落在对应子区域内 :type:`List[np.ndarray]`
     '''
+
     results = []
-
     counts = []
-    pc_color = (model.d2c_r @ pc_dep.T).T + model.d2c_t
 
+    pc_color = (model.d2c_r @ pc_dep.T).T + model.d2c_t
     pc_rot = pc_color @ R_box_cam.T
 
-    for i in range(6):
 
+    for i in range(6):
         # 子区域中心
         T_i_cam = T_box_cam + R_box_cam @ T_local_centers[i]
-
         tx, ty, tz = T_i_cam
+
         # 直接比较，不构造 pts_i
         mask = (
             (np.abs(pc_rot[:,0] - tx) <= hx) &
@@ -103,13 +114,6 @@ def project_subboxes(model, T_box_cam, R_box_cam):
 
     return uv_boxes
 
-def rot_z(deg):
-    rad = np.deg2rad(deg)
-    return np.array([
-        [np.sin(rad), np.cos(rad),0],
-        [0,0,1]
-    ])
-        [np.cos(rad),-np.sin(rad),0],
 def quat_to_rot(qx, qy, qz, qw):
     x, y, z, w = qx, qy, qz, qw
     xx, yy, zz = x*x, y*y, z*z
