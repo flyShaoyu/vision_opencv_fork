@@ -11,6 +11,7 @@ import threading
 from tf2_ros import Buffer, TransformListener, TransformException
 import json
 import yaml
+from ultralytics import YOLO
 
 class ImageNode(DepthCamNode):
     def __init__(self):
@@ -45,6 +46,9 @@ class ImageNode(DepthCamNode):
         self.depcam_color_image = None
         self.depcam_depth_image = None
         self.pc_need = 0
+        
+        self.yolo_model = YOLO('1.20.pt')
+        self.yolo_names = self.yolo_model.names
 
         self.spearhead_need = threading.Event()
         self.YOLO_need = threading.Event()
@@ -57,16 +61,18 @@ class ImageNode(DepthCamNode):
 
     def depcam_depth_callback(self, msg):
         self.depcam_depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough').astype(np.float32) / 1000.0
-        if self.pc_need:
+        if self.pc_need > 0:
             self.pc = self.depth_camera.depth2points(self.depcam_depth_image)
 
     def fuction_check(self, msg):
         if msg.data == 'spearhead':
             self.spearhead_need.set()
             self.get_logger().info('Spearhead check requested.')
+            self.pc_need += 1
         elif msg.data == 'spearhead_stop':
             self.spearhead_need.clear()
             self.get_logger().info('Spearhead check stopped.')
+            self.pc_need = max(0, self.pc_need - 1)
         elif msg.data == 'YOLO':
             self.YOLO_need.set()
             self.get_logger().info('YOLO detection requested.')
@@ -115,9 +121,27 @@ class ImageNode(DepthCamNode):
             result = get_yolo_result(self.yolo_model, roi_img)
             self.get_logger().info(f"YOLO detection completed with {len(result)} results.")
             result_msg = String()
-            result_dic = {"topic_name": "YOLO_detection", "data": [res.boxes.xyxy.tolist() for res in result]}
+            result_dic = {"topic_name": "YOLO_detection", "data": []}
+            res = result[0]
+                
+            frame_boxes = []
+            xyxy = res.boxes.xyxy.tolist()
+            conf = res.boxes.conf.tolist()
+            cls  = res.boxes.cls.tolist()
+
+            for b, c, k in zip(xyxy, conf, cls):
+                k_int = int(k)
+                frame_boxes.append({
+                    "bbox_xyxy": b,                 # [x1,y1,x2,y2]
+                    "conf": float(c),               # 置信度
+                    "class_id": k_int,              # 类别id
+                    "class_name": self.yolo_names[k_int]      # 类别名
+                })
+
+            result_dic["data"] = frame_boxes
             result_msg.data = json.dumps(result_dic)
             self.data_publisher.publish(result_msg)
+    # 数据示例{'topic_name': 'YOLO_detection', 'data': [{'bbox_xyxy': [284.434814453125, 95.02224731445312, 594.1102294921875, 418.7121276855469], 'conf': 0.7210436463356018, 'class_id': 16, 'class_name': 'T_17'}]}
 
 def main():
     rclpy.init()
