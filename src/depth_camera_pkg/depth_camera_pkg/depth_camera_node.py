@@ -3,7 +3,7 @@ import rclpy.node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import String
-from DepthCamera import check_spearhead, rot_x, rot_y, rot_z, DepthCamNode, img_preprocess, get_yolo_result, tfmsg_to_Rt
+from DepthCamera import check_spearhead, rot_x, rot_y, rot_z, DepthCamNode, img_preprocess, get_yolo_result
 import numpy as np
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
@@ -12,6 +12,32 @@ from tf2_ros import Buffer, TransformListener, TransformException
 import json
 import yaml
 from ultralytics import YOLO
+import subprocess
+import cv2
+from deform_restore import trans3DToPlane, ROIRestore
+from shelf_outline_recog import process_image_and_detect_3x3
+from check_KFS import check_red_blue
+
+def quat_to_rot(qx, qy, qz, qw):
+    x, y, z, w = qx, qy, qz, qw
+    xx, yy, zz = x*x, y*y, z*z
+    xy, xz, yz = x*y, x*z, y*z
+    wx, wy, wz = w*x, w*y, w*z
+    return np.array([
+        [1 - 2*(yy+zz),     2*(xy-wz),     2*(xz+wy)],
+        [    2*(xy+wz), 1 - 2*(xx+zz),     2*(yz-wx)],
+        [    2*(xz-wy),     2*(yz+wx), 1 - 2*(xx+yy)],
+    ], dtype=float)
+
+def tfmsg_to_Rt(tf_msg):
+    tr = tf_msg.transform.translation
+    q  = tf_msg.transform.rotation
+    t = np.array([tr.x, tr.y, tr.z], dtype=float)
+    R = quat_to_rot(q.x, q.y, q.z, q.w)
+    return R, t
+
+revc_USB = None
+tevc_USB = None
 
 class ImageNode(DepthCamNode):
     def __init__(self):
@@ -46,15 +72,18 @@ class ImageNode(DepthCamNode):
         self.depcam_color_image = None
         self.depcam_depth_image = None
         self.pc_need = 0
+        self.vc = None
         
         self.yolo_model = YOLO('1.20.pt')
         self.yolo_names = self.yolo_model.names
 
         self.spearhead_need = threading.Event()
         self.YOLO_need = threading.Event()
+        self.rb_check_need = threading.Event()
 
         threading.Thread(target=self.spearhead_check_thread, daemon=True).start()
         threading.Thread(target=self.YOLO_detection_thread, daemon=True).start()
+        threading.Thread(target=self.rb_check_thread, daemon=True).start()
 
     def depcam_color_callback(self, msg):
         self.depcam_color_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
@@ -79,6 +108,13 @@ class ImageNode(DepthCamNode):
         elif msg.data == 'YOLO_stop':
             self.YOLO_need.clear()
             self.get_logger().info('YOLO detection stopped.')
+        elif msg.data == 'rb_check':
+            self.rb_check_need.set()
+            self.get_logger().info('RB check requested.')
+            self.rb_camera_init()
+        elif msg.data == 'rb_check_stop':
+            self.rb_check_need.clear()
+            self.get_logger().info('RB check stopped.')
         # else:
         #     self.get_logger().warn(f'Unknown function request: {msg.data}')
 
@@ -142,6 +178,74 @@ class ImageNode(DepthCamNode):
             result_msg.data = json.dumps(result_dic)
             self.data_publisher.publish(result_msg)
     # 数据示例{'topic_name': 'YOLO_detection', 'data': [{'bbox_xyxy': [284.434814453125, 95.02224731445312, 594.1102294921875, 418.7121276855469], 'conf': 0.7210436463356018, 'class_id': 16, 'class_name': 'T_17'}]}
+
+    def rb_check_thread(self):
+        while True:
+            self.rb_check_need.wait()
+            ret,fram = self.vc.read()
+            if not ret:
+                self.get_logger().warn('RB camera read failed.')
+                continue
+            else:
+                # 用世界坐标算角点（缺内参）
+            #     corners = np.array([[0,0,0],[639,0,0],[639,479,0],[0,479,0]], dtype=np.float32) # 填充为实际坐标
+            #     source = "map"
+            #     target = "USB_camera_frame"
+            #     try:
+            #         tf_cam_map = self.tf_buffer.lookup_transform(
+            #             target, source, rclpy.time.Time()
+            #         )
+            #         R_cam_map, t_cam_map = tfmsg_to_Rt(tf_cam_map)
+            #         corners_cam = (R_cam_map @ corners.T).T + t_cam_map
+            #     except TransformException as ex:
+            #         self.get_logger().warn(f"TF not ready: {ex}")
+
+            #     revc = revc_USB
+            #     tevc = tevc_USB
+            #     corners_2d = trans3DToPlane(corners_cam, rvec=revc, tvec=tevc)
+
+                # restored_img = ROIRestore(fram, corners_2d, image_shape=[500,500])
+
+                # 图像解角点，稳定性差
+                proc_res = process_image_and_detect_3x3(fram)
+                if proc_res is None:
+                    self.get_logger().warn('RB check failed to detect 3x3 grid.')
+                    continue
+                warped = proc_res['warped']
+                rb_result = check_red_blue(warped)
+                result_msg = String()
+                result_dic = {"topic_name": "rb_check", "data": rb_result}
+                result_msg.data = json.dumps(result_dic)
+                self.data_publisher.publish(result_msg)            
+
+    def rb_camera_init(self):
+        file_name = "USB_capture.yaml"
+        file_path = "cv_lib/" + file_name
+
+        with open(file_path, "r") as f:
+            cfg = yaml.safe_load(f)
+
+        cam = cfg["camera"]
+        ctrls = cam["controls"]
+
+        dev = cam["device"]
+        
+        self.vc = cv2.VideoCapture(dev, cv2.CAP_V4L2)
+        self.vc.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3) 
+
+        def set_ctrl(name, value):
+            try:
+                subprocess.run(
+                    ["v4l2-ctl", "-d", dev, "-c", f"{name}={value}"],
+                    check=True
+                )
+            except subprocess.CalledProcessError as e:
+                print(f"Failed to set control {name} to {value}: {e}")
+                raise
+
+        # 下发所有控制参数
+        for k, v in ctrls.items():
+            set_ctrl(k, v)
 
 def main():
     rclpy.init()

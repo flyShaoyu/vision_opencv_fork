@@ -113,21 +113,3 @@ def project_subboxes(model, T_box_cam, R_box_cam):
         uv_boxes.append(uv)
 
     return uv_boxes
-
-def quat_to_rot(qx, qy, qz, qw):
-    x, y, z, w = qx, qy, qz, qw
-    xx, yy, zz = x*x, y*y, z*z
-    xy, xz, yz = x*y, x*z, y*z
-    wx, wy, wz = w*x, w*y, w*z
-    return np.array([
-        [1 - 2*(yy+zz),     2*(xy-wz),     2*(xz+wy)],
-        [    2*(xy+wz), 1 - 2*(xx+zz),     2*(yz-wx)],
-        [    2*(xz-wy),     2*(yz+wx), 1 - 2*(xx+yy)],
-    ], dtype=float)
-
-def tfmsg_to_Rt(tf_msg):
-    tr = tf_msg.transform.translation
-    q  = tf_msg.transform.rotation
-    t = np.array([tr.x, tr.y, tr.z], dtype=float)
-    R = quat_to_rot(q.x, q.y, q.z, q.w)
-    return R, t

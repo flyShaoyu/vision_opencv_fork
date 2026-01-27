@@ -230,6 +230,12 @@ def find_clusters(data, group_num=None, eps=0.02, min_samples=5, if_annular=Fals
     return peaks_merged
 
 def find_largest_quad(img_bgr):
+    """
+    在输入图像中寻找最大的矩形轮廓，返回其四个顶点的图像坐标
+
+    :param img_bgr: 输入的BGR图像
+    :return: 四个顶点的图像坐标，按顺时针顺序排列 :type:`np.ndarray` (4x2)
+    """
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     #gray = cv2.GaussianBlur(gray, (11,11), 0)
     gray = cv2.bilateralFilter(gray, d=9, sigmaColor=100, sigmaSpace=5)
@@ -510,13 +516,17 @@ def find_largest_quad(img_bgr):
                                     outer_frame[2][0], np.radians(outer_frame[2][1]))
         x4,y4 = intersect_rho_theta(outer_frame[1][0], np.radians(outer_frame[1][1]),
                                     outer_frame[3][0], np.radians(outer_frame[3][1]))
-        cv2.circle(lines_img, (int(x1), int(y1)), 10, (0,255,0), -1)
-        cv2.circle(lines_img, (int(x2), int(y2)), 10, (0,255,0), -1)
-        cv2.circle(lines_img, (int(x3), int(y3)), 10, (0,255,0), -1)
-        cv2.circle(lines_img, (int(x4), int(y4)), 10, (0,255,0), -1)
-        cv2.namedWindow("Hough Lines", cv2.WINDOW_NORMAL)
-        cv2.imshow("Hough Lines", lines_img)
-        cv2.waitKey(5000)
+        return np.array([[x1,y1],
+                         [x2,y2],
+                         [x4,y4],
+                         [x3,y3]], dtype=np.float32)
+        # cv2.circle(lines_img, (int(x1), int(y1)), 10, (0,255,0), -1)
+        # cv2.circle(lines_img, (int(x2), int(y2)), 10, (0,255,0), -1)
+        # cv2.circle(lines_img, (int(x3), int(y3)), 10, (0,255,0), -1)
+        # cv2.circle(lines_img, (int(x4), int(y4)), 10, (0,255,0), -1)
+        # cv2.namedWindow("Hough Lines", cv2.WINDOW_NORMAL)
+        # cv2.imshow("Hough Lines", lines_img)
+        # cv2.waitKey(5000)
 
     # for cnt in contours[:20]:
     #     area = cv2.contourArea(cnt)
@@ -584,18 +594,18 @@ def find_largest_quad(img_bgr):
 #     return ok
 
 
-def get_3x3_cells(out_size=360):
-    # 返回 9 个小格的 (x0,y0,x1,y1)
-    cells = []
-    step = out_size / 3.0
-    for r in range(3):
-        for c in range(3):
-            x0 = int(round(c * step))
-            y0 = int(round(r * step))
-            x1 = int(round((c+1) * step))
-            y1 = int(round((r+1) * step))
-            cells.append((x0,y0,x1,y1))
-    return cells
+# def get_3x3_cells(out_size=360):
+#     # 返回 9 个小格的 (x0,y0,x1,y1)
+#     cells = []
+#     step = out_size / 3.0
+#     for r in range(3):
+#         for c in range(3):
+#             x0 = int(round(c * step))
+#             y0 = int(round(r * step))
+#             x1 = int(round((c+1) * step))
+#             y1 = int(round((r+1) * step))
+#             cells.append((x0,y0,x1,y1))
+#     return cells
 
 def sharpen_unsharp(img, amount=0.8): # 非常简单的非锐化掩模锐化，放大高频
     blur = cv2.GaussianBlur(img, (0,0), sigmaX=1.0)
@@ -617,6 +627,14 @@ def detect_3x3_outer_and_warp(img, out_size=360):
 
     warped= ROIRestore(img, quad, image_shape=[out_size, out_size])
 
+    # 删除下1/4部分，拉伸上3/4部分到全图
+    h, w = warped.shape[:2]
+    crop_h = int(h * 3 / 4)
+    top = warped[:crop_h, :]
+
+    stretched = cv2.resize(top, (w, h), interpolation=cv2.INTER_CUBIC)
+
+
     # cv2.namedWindow("Warped Preview", cv2.WINDOW_NORMAL)
     # cv2.imshow("Warped Preview", warped)
     # cv2.waitKey(5000)
@@ -625,47 +643,53 @@ def detect_3x3_outer_and_warp(img, out_size=360):
     # if not ok:
     #     return None  # 外框像四边形，但不是3x3网格
 
-    cells = get_3x3_cells(out_size)
+    # cells = get_3x3_cells(out_size)
     return {
         "quad": quad,       # 原图外框四点
-        "warped": warped,   # 拉正后的图
-        "cells": cells      # 拉正图上9格坐标
+        "warped": stretched,   # 拉正后的图
     }
 
-img_name = "1.jpg"
-img_path = "photos/" + img_name
+def process_image_and_detect_3x3(img):
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    hsv = preproc_hsv(hsv, v_gain=1.8, s_gain=1.4)
+    hsv = clahe_on_v(hsv, clip=2.5, grid=(8,8))
+    mask = get_red_blue_mask(hsv, blue=True, red=True, kernel_size=(7,7))
+    hsv  = pop_color(hsv, mask, 1.4, 1.0) 
+    img = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 
-img = cv2.imread(img_path)
-img_original = img.copy()
+    # 模糊
+    # img = cv2.GaussianBlur(img, (3,3), 0)
+    # 锐化
+    #img = cv2.detailEnhance(img, sigma_s=10, sigma_r=0.15)
 
-hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-hsv = preproc_hsv(hsv, v_gain=1.8, s_gain=1.4)
-hsv = clahe_on_v(hsv, clip=2.5, grid=(8,8))
-mask = get_red_blue_mask(hsv, blue=True, red=True, kernel_size=(7,7))
-hsv  = pop_color(hsv, mask, 1.4, 1.0) 
-img = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    img = sharpen_unsharp(img, amount=0.8)
+    res = detect_3x3_outer_and_warp(img, out_size=360)
+    # if res is None:
+    #     print("No valid 3x3 grid found.")
+    # else:
+    #     print("3x3 grid detected.")
+    #     warped = res["warped"]
+    #     cells = res["cells"]
 
-# 模糊
-# img = cv2.GaussianBlur(img, (3,3), 0)
-# 锐化
-#img = cv2.detailEnhance(img, sigma_s=10, sigma_r=0.15)
+        # for (x0,y0,x1,y1) in cells:
+        #     cv2.rectangle(warped, (x0,y0), (x1,y1), (0,255,0), 2)
+    return res
 
-img = sharpen_unsharp(img, amount=0.8)
-res = detect_3x3_outer_and_warp(img, out_size=360)
-# if res is None:
-#     print("No valid 3x3 grid found.")
-# else:
-#     print("3x3 grid detected.")
-#     warped = res["warped"]
-#     cells = res["cells"]
+def main():
+    img_name = "1.jpg"
+    img_path = "photos/" + img_name
 
-    # for (x0,y0,x1,y1) in cells:
-    #     cv2.rectangle(warped, (x0,y0), (x1,y1), (0,255,0), 2)
+    img = cv2.imread(img_path)
+    img_original = img.copy()
+
+    process_image_and_detect_3x3(img)
+
+    cv2.namedWindow("Original Image", cv2.WINDOW_NORMAL)
+    cv2.imshow("Original Image", img_original)
+    # cv2.imshow("Warped with Cells", img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 
-
-cv2.namedWindow("Original Image", cv2.WINDOW_NORMAL)
-cv2.imshow("Original Image", img_original)
-# cv2.imshow("Warped with Cells", img)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    main()
